@@ -1,0 +1,14 @@
+import { resolve } from 'node:path';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  build: {
+    outDir: 'dist',
+    emptyOutDir: false,
+    rollupOptions: {
+      input: {
+        'widget-frame': resolve(__dirname, 'widget-frame.html'),
+      },
+    },
+  },
+});

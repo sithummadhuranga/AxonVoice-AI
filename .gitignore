@@ -1,0 +1,95 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.rsuser
+*.sln.docstates
+.vs/
+*.userprefs
+launchSettings.json
+TestResults/
+coverage/
+*.nupkg
+*.snupkg
+
+# EF Core migrations are source-controlled in this repository.
+# Do not ignore migration files or model snapshots.
+
+# Environment secrets — NEVER commit these
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+dist-ssr/
+out/
+build/
+.turbo/
+.vite/
+.vercel/
+.yarn/
+.pnp
+.pnp.*
+*.tsbuildinfo
+next-env.d.ts
+frontend/dashboard/.next/
+frontend/widget/dist/
+
+# Uploads (runtime data, not source)
+infra/uploads/
+uploads/
+
+# Docker volume data
+postgres_data/
+redis_data/
+qdrant_data/
+ollama_data/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# JetBrains Rider / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Visual Studio Code (keep workspace settings, exclude local overrides)
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.code-workspace
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+*.log.*
+
+# NuGet
+*.lock.json
+!packages.lock.json
+
+# Test output
+*.trx
+*.coverage
+
+# AI Assistant Instructions — NEVER commit these
+AGENTS.md
+frontend/dashboard/AGENTS.md
+frontend/dashboard/CLAUDE.md
+.github/copilot-instructions.md
+ARCHITECTURE.md

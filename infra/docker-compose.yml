@@ -1,0 +1,259 @@
+version: '3.9'
+
+services:
+  # ─── API Gateway ────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ../src/Gateway
+      dockerfile: Dockerfile
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      REDIS_URL: ${REDIS_URL}
+      SESSION_RELAY_URL: http://session-relay:8080
+      AGENT_CONFIG_URL: http://agent-config:8080
+      KNOWLEDGE_BASE_URL: http://knowledge-base:8080
+      CONVERSATION_STORE_URL: http://conversation-store:8080
+    depends_on:
+      session-relay:
+        condition: service_started
+      agent-config:
+        condition: service_started
+      knowledge-base:
+        condition: service_started
+      conversation-store:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+      - public
+
+  # ─── Session Relay ──────────────────────────────────────────────────────────
+  session-relay:
+    build:
+      context: ../src/Services/SessionRelay
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      POSTGRES_URL: ${POSTGRES_URL}
+      REDIS_URL: ${REDIS_URL}
+      QDRANT_URL: ${QDRANT_URL}
+      OLLAMA_URL: ${OLLAMA_URL}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      AGENT_CONFIG_URL: http://agent-config:8080
+      KNOWLEDGE_BASE_URL: http://knowledge-base:8080
+      CONVERSATION_STORE_URL: http://conversation-store:8080
+      DEFAULT_SESSION_TIMEOUT_SEC: ${DEFAULT_SESSION_TIMEOUT_SEC:-600}
+      DEFAULT_SILENCE_TIMEOUT_SEC: ${DEFAULT_SILENCE_TIMEOUT_SEC:-90}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Agent Config ───────────────────────────────────────────────────────────
+  agent-config:
+    build:
+      context: ../src/Services/AgentConfig
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      POSTGRES_URL: ${POSTGRES_URL}
+      REDIS_URL: ${REDIS_URL}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      DEFAULT_RATE_LIMIT_DAILY: ${DEFAULT_RATE_LIMIT_DAILY:-1000}
+      DEFAULT_RATE_LIMIT_CONCURRENT: ${DEFAULT_RATE_LIMIT_CONCURRENT:-20}
+      DEFAULT_BOOKING_HOLD_MINUTES: ${DEFAULT_BOOKING_HOLD_MINUTES:-30}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Knowledge Base ─────────────────────────────────────────────────────────
+  knowledge-base:
+    build:
+      context: ../src/Services/KnowledgeBase
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      POSTGRES_URL: ${POSTGRES_URL}
+      QDRANT_URL: ${QDRANT_URL}
+      OLLAMA_URL: ${OLLAMA_URL}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+    volumes:
+      - document_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Conversation Store ─────────────────────────────────────────────────────
+  conversation-store:
+    build:
+      context: ../src/Services/ConversationStore
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      POSTGRES_URL: ${POSTGRES_URL}
+      OLLAMA_URL: ${OLLAMA_URL}
+      OLLAMA_COMPLETION_MODEL: ${OLLAMA_COMPLETION_MODEL:-llama3.2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Tenant Dashboard ───────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ../frontend/dashboard
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Infrastructure: PostgreSQL 16 ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-voiceagent}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Schema is managed by EF Core Code-First migrations, not init SQL.
+      # On first run: docker compose exec agent-config dotnet ef database update
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-voiceagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Infrastructure: Redis 7 ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Infrastructure: Qdrant ─────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Infrastructure: Ollama ─────────────────────────────────────────────────
+  # For GPU acceleration (NVIDIA), install the NVIDIA Container Toolkit on the
+  # host and uncomment the deploy section below:
+  # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # Pulls required models on first startup — exits once done.
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        ollama pull nomic-embed-text &&
+        ollama pull llama3.2 &&
+        echo 'Ollama models ready.'
+      "
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    restart: "no"
+    networks:
+      - internal
+
+# ─── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  # All inter-service traffic stays on this network; not reachable from outside.
+  internal:
+    driver: bridge
+  # Only the gateway is attached to the public network.
+  public:
+    driver: bridge
+
+# ─── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  ollama_data:
+  document_uploads:

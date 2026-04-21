@@ -1,0 +1,136 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: #1a1410;
+  background:
+    radial-gradient(circle at top, rgba(219, 156, 93, 0.28), transparent 42%),
+    linear-gradient(180deg, #fff7ee 0%, #f4ecdf 100%);
+  font-family: Avenir Next, Segoe UI, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.demo-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px 120px;
+}
+
+.demo-copy {
+  width: min(960px, 100%);
+  padding: 40px;
+  border: 1px solid rgba(98, 70, 45, 0.16);
+  border-radius: 32px;
+  background: rgba(255, 250, 244, 0.84);
+  box-shadow: 0 24px 80px rgba(73, 45, 20, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.demo-kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.78rem;
+  color: #9c5b2d;
+}
+
+h1 {
+  margin: 12px 0 20px;
+  font-size: clamp(2.8rem, 6vw, 5.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.demo-body {
+  margin: 0;
+  max-width: 52rem;
+  font-size: 1.08rem;
+  color: rgba(48, 33, 22, 0.86);
+}
+
+.demo-grid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.demo-grid article {
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(98, 70, 45, 0.12);
+}
+
+.demo-grid h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
+}
+
+.demo-grid p {
+  margin: 0;
+  color: rgba(48, 33, 22, 0.78);
+}
+
+@media (max-width: 720px) {
+  .demo-copy {
+    padding: 28px;
+    border-radius: 24px;
+  }
+
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+      width: 100%;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+  }
+}
+
+#spacer {
+  height: 88px;
+  border-top: 1px solid var(--border);
+  @media (max-width: 1024px) {
+    height: 48px;
+  }
+}
+
+.ticks {
+  position: relative;
+  width: 100%;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: -4.5px;
+    border: 5px solid transparent;
+  }
+
+  &::before {
+    left: 0;
+    border-left-color: var(--border);
+  }
+  &::after {
+    right: 0;
+    border-right-color: var(--border);
+  }
+}

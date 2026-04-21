@@ -1,0 +1,38 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Gateway/">
+    <Project Path="src/Gateway/AxonVoiceAI.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/AgentConfig/">
+    <Project Path="src/Services/AgentConfig/AxonVoiceAI.AgentConfig.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/ConversationStore/">
+    <Project Path="src/Services/ConversationStore/AxonVoiceAI.ConversationStore.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/KnowledgeBase/">
+    <Project Path="src/Services/KnowledgeBase/AxonVoiceAI.KnowledgeBase.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/SessionRelay/">
+    <Project Path="src/Services/SessionRelay/AxonVoiceAI.SessionRelay.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/AxonVoiceAI.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/AgentConfig.Tests/">
+    <Project Path="tests/AgentConfig.Tests/AxonVoiceAI.AgentConfig.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/ConversationStore.Tests/">
+    <Project Path="tests/ConversationStore.Tests/AxonVoiceAI.ConversationStore.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/KnowledgeBase.Tests/">
+    <Project Path="tests/KnowledgeBase.Tests/AxonVoiceAI.KnowledgeBase.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/SessionRelay.Tests/">
+    <Project Path="tests/SessionRelay.Tests/AxonVoiceAI.SessionRelay.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Shared.Tests/">
+    <Project Path="tests/Shared.Tests/AxonVoiceAI.Shared.Tests.csproj" />
+  </Folder>
+</Solution>
