@@ -7,6 +7,7 @@ public record AgentConfigDto(
     string BusinessName,
     string Persona,
     string Language,
+    string[] SupportedLanguages,
     string VoiceName,
     string GeminiModel,
     string GeminiApiKey,

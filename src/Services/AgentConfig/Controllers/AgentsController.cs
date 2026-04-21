@@ -156,11 +156,14 @@ public sealed class AgentsController : ControllerBase
     /// </summary>
     [HttpGet("{id:guid}/config")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetAgentConfigAsync(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetAgentConfigAsync(Guid id, [FromQuery] Guid tenantId, CancellationToken ct)
     {
+        if (tenantId == Guid.Empty)
+            return BadRequest(new { error = "tenantId is required." });
+
         var agent = await _db.Agents
             .Include(a => a.Tenant)
-            .Where(a => a.Id == id && a.IsActive && a.Tenant.IsActive)
+            .Where(a => a.Id == id && a.TenantId == tenantId && a.IsActive && a.Tenant.IsActive)
             .FirstOrDefaultAsync(ct);
 
         if (agent is null) return NotFound();
@@ -176,6 +179,7 @@ public sealed class AgentsController : ControllerBase
             BusinessName: agent.Tenant.Name,
             Persona: agent.PersonaPrompt,
             Language: agent.PrimaryLanguage,
+            SupportedLanguages: agent.SupportedLanguages,
             VoiceName: agent.VoiceName,
             GeminiModel: agent.GeminiModel,
             GeminiApiKey: decryptedKey,

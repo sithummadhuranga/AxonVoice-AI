@@ -47,7 +47,7 @@ builder.Services.AddSingleton<IEmbeddingProvider>(sp =>
 builder.Services.AddHttpClient("ollama");
 builder.Services.AddSingleton<PdfExtractor>();
 builder.Services.AddSingleton<DocxExtractor>();
-builder.Services.AddScoped<KnowledgeRetriever>();
+builder.Services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>();
 builder.Services.AddSingleton<DocumentIngestionJob>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DocumentIngestionJob>());
 

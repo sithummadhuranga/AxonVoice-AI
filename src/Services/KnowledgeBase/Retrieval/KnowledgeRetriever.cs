@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AxonVoiceAI.KnowledgeBase.Retrieval;
 
-public sealed class KnowledgeRetriever
+public sealed class KnowledgeRetriever : IKnowledgeRetriever
 {
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly QdrantVectorStore _vectorStore;
@@ -26,17 +26,26 @@ public sealed class KnowledgeRetriever
     }
 
     public async Task<IReadOnlyList<KnowledgeChunkDto>> RetrieveRelevantChunksAsync(
+        Guid tenantId,
         Guid agentId,
         string query,
         CancellationToken ct)
     {
         var queryVector = await _embeddingProvider.EmbedAsync(query, ct);
 
-        var results = await _vectorStore.SearchAsync(agentId, queryVector, TopK, ScoreThreshold, ct);
+        var results = await _vectorStore.SearchAsync(
+            tenantId,
+            agentId,
+            queryVector,
+            TopK,
+            ScoreThreshold,
+            ct);
 
         _logger.LogDebug(
-            "Retrieved {Count} knowledge chunks for agent {AgentId}.",
-            results.Count, agentId);
+            "Retrieved {Count} knowledge chunks for tenant {TenantId} and agent {AgentId}.",
+            results.Count,
+            tenantId,
+            agentId);
 
         return results;
     }

@@ -17,7 +17,6 @@ namespace AxonVoiceAI.SessionRelay.Handlers;
 public sealed class FunctionCallInterceptor
 {
     private readonly Kernel _kernel;
-    private readonly IRealtimeAudioChannel _channel;
     private readonly ILogger<FunctionCallInterceptor> _logger;
     private readonly string _language;
     private readonly string _tenantId;
@@ -26,7 +25,6 @@ public sealed class FunctionCallInterceptor
 
     public FunctionCallInterceptor(
         Kernel kernel,
-        IRealtimeAudioChannel channel,
         string language,
         string tenantId,
         string agentId,
@@ -34,7 +32,6 @@ public sealed class FunctionCallInterceptor
         ILogger<FunctionCallInterceptor> logger)
     {
         _kernel = kernel;
-        _channel = channel;
         _language = language;
         _tenantId = tenantId;
         _agentId = agentId;
@@ -118,6 +115,9 @@ public sealed class FunctionCallInterceptor
                 }
             }
 
+            ApplyArgumentAliases(arguments);
+            InjectSessionContextArguments(call.Name, arguments);
+
             // Search all loaded plugins for a function matching the name Gemini specified.
             KernelFunction? function = null;
             foreach (var plugin in _kernel.Plugins)
@@ -142,6 +142,34 @@ public sealed class FunctionCallInterceptor
             var errorPayload = JsonSerializer.Serialize(new { error = ex.Message });
             return new GeminiFunctionResponse(call.Id, call.Name, errorPayload);
         }
+    }
+
+    private void InjectSessionContextArguments(string functionName, KernelArguments arguments)
+    {
+        arguments["agentId"] = _agentId;
+
+        if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal))
+        {
+            arguments["sessionId"] = _sessionId;
+            arguments["detectedLanguage"] = _language;
+        }
+    }
+
+    private static void ApplyArgumentAliases(KernelArguments arguments)
+    {
+        CopyArgument(arguments, "party_size", "partySize");
+        CopyArgument(arguments, "customer_name", "customerName");
+        CopyArgument(arguments, "contact_number", "customerPhone");
+        CopyArgument(arguments, "notes", "specialRequests");
+    }
+
+    private static void CopyArgument(KernelArguments arguments, string sourceName, string targetName)
+    {
+        if (arguments.ContainsName(targetName))
+            return;
+
+        if (arguments.TryGetValue(sourceName, out var value))
+            arguments[targetName] = value;
     }
 }
 

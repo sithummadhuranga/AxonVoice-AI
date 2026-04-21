@@ -105,11 +105,12 @@ app.Map("/ws/session", async (HttpContext httpContext, SessionHandler sessionHan
     var tenantId = Guid.Parse(user.FindFirst("tenant_id")!.Value);
     var agentId = Guid.Parse(user.FindFirst("agent_id")!.Value);
     var sessionId = Guid.Parse(user.FindFirst("session_id")!.Value);
+    var sessionLanguage = user.FindFirst("language")?.Value ?? string.Empty;
 
     var webSocket = await httpContext.WebSockets.AcceptWebSocketAsync();
     var channel = new WebSocketAudioChannel(webSocket);
 
-    var context = new AxonVoiceAI.Shared.DTOs.SessionStartContextDto(tenantId, agentId, sessionId, "en");
+    var context = new AxonVoiceAI.Shared.DTOs.SessionStartContextDto(tenantId, agentId, sessionId, sessionLanguage);
     await sessionHandler.RunSessionAsync(context, channel, ct);
 });
 

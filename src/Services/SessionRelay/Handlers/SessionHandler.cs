@@ -7,7 +7,6 @@ using AxonVoiceAI.Shared.DTOs;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.Net.Http.Json;
-using System.Text.Json;
 
 namespace AxonVoiceAI.SessionRelay.Handlers;
 
@@ -50,7 +49,7 @@ public sealed class SessionHandler
 
         // Fetch agent config and knowledge base context in parallel.
         var agentConfigTask = FetchAgentConfigAsync(context.AgentId, context.TenantId, ct);
-        var knowledgeTask = FetchKnowledgeAsync(context.AgentId, context.TenantId, ct);
+        var knowledgeTask = FetchKnowledgeAsync(context.AgentId, context.TenantId, context.Language, ct);
 
         await Task.WhenAll(agentConfigTask, knowledgeTask);
 
@@ -68,8 +67,7 @@ public sealed class SessionHandler
             await geminiClient.ConnectAsync(agentConfig.GeminiApiKey, sessionConfig, ct);
 
             var interceptor = new FunctionCallInterceptor(
-                BuildKernel(context),
-                channel,
+                BuildKernel(),
                 agentConfig.Language,
                 context.TenantId.ToString(),
                 context.AgentId.ToString(),
@@ -138,19 +136,34 @@ public sealed class SessionHandler
     private async Task<AgentConfigDto> FetchAgentConfigAsync(Guid agentId, Guid tenantId, CancellationToken ct)
     {
         var client = _httpClientFactory.CreateClient("agent-config");
-        var response = await client.GetAsync($"/agents/{agentId}/config", ct);
+        var response = await client.GetAsync($"/agents/{agentId}/config?tenantId={tenantId:D}", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<AgentConfigDto>(ct)
             ?? throw new InvalidOperationException($"Agent config not found for agent {agentId}.");
     }
 
-    private async Task<IReadOnlyList<KnowledgeChunkDto>> FetchKnowledgeAsync(Guid agentId, Guid tenantId, CancellationToken ct)
+    private async Task<IReadOnlyList<KnowledgeChunkDto>> FetchKnowledgeAsync(
+        Guid agentId,
+        Guid tenantId,
+        string sessionLanguage,
+        CancellationToken ct)
     {
         try
         {
             var client = _httpClientFactory.CreateClient("knowledge-base");
-            var response = await client.GetAsync($"/agents/{agentId}/knowledge/context", ct);
-            if (!response.IsSuccessStatusCode) return [];
+            var retrievalQuery = KnowledgeContextQueryBuilder.BuildDefault(sessionLanguage);
+            var requestUri = $"/internal/agents/{agentId}/knowledge/context?tenantId={tenantId:D}&query={Uri.EscapeDataString(retrievalQuery)}";
+            var response = await client.GetAsync(requestUri, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "Knowledge base context request returned {StatusCode} for agent {AgentId} and tenant {TenantId}.",
+                    (int)response.StatusCode,
+                    agentId,
+                    tenantId);
+                return [];
+            }
+
             return await response.Content.ReadFromJsonAsync<IReadOnlyList<KnowledgeChunkDto>>(ct) ?? [];
         }
         catch (Exception ex)
@@ -160,7 +173,7 @@ public sealed class SessionHandler
         }
     }
 
-    private Kernel BuildKernel(SessionStartContextDto context)
+    private Kernel BuildKernel()
     {
         var builder = Kernel.CreateBuilder();
         foreach (var plugin in _plugins)
