@@ -1,5 +1,6 @@
 using AxonVoiceAI.ConversationStore.Data;
 using AxonVoiceAI.ConversationStore.Services;
+using AxonVoiceAI.Shared.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -7,15 +8,13 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration["POSTGRES_CONNECTION_STRING"]
-    ?? throw new InvalidOperationException("POSTGRES_CONNECTION_STRING is required.");
-var jwtSigningKey = builder.Configuration["JWT_SIGNING_KEY"]
-    ?? throw new InvalidOperationException("JWT_SIGNING_KEY is required.");
-var platformBaseUrl = builder.Configuration["PLATFORM_BASE_URL"]
-    ?? throw new InvalidOperationException("PLATFORM_BASE_URL is required.");
-var ollamaUrl = builder.Configuration["OLLAMA_URL"]
-    ?? throw new InvalidOperationException("OLLAMA_URL is required.");
-var ollamaModel = builder.Configuration["OLLAMA_SUMMARY_MODEL"] ?? "llama3.2";
+var connectionString = builder.Configuration.GetRequiredValue(builder.Environment, "POSTGRES_CONNECTION_STRING", "POSTGRES_URL");
+var jwtSigningKey = builder.Configuration.GetRequiredValue(builder.Environment, "JWT_SIGNING_KEY");
+var platformBaseUrl = builder.Configuration.GetRequiredValue(builder.Environment, "PLATFORM_BASE_URL");
+var ollamaUrl = builder.Configuration.GetRequiredValue(builder.Environment, "OLLAMA_URL");
+var ollamaModel = builder.Configuration.GetValueOrDefault("llama3.2", "OLLAMA_SUMMARY_MODEL", "OLLAMA_COMPLETION_MODEL");
+
+builder.Services.AddPlatformDataProtection(builder.Configuration, builder.Environment, "AxonVoiceAI.ConversationStore");
 
 builder.Services.AddDbContext<ConversationDbContext>(options =>
     options.UseNpgsql(connectionString));

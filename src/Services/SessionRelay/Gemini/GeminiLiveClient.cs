@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AxonVoiceAI.SessionRelay.Handlers;
 using Microsoft.Extensions.Logging;
 
 namespace AxonVoiceAI.SessionRelay.Gemini;
@@ -16,6 +17,7 @@ public sealed class GeminiLiveClient : IAsyncDisposable
     private readonly ClientWebSocket _webSocket;
     private readonly ILogger<GeminiLiveClient> _logger;
     private readonly string _sessionId;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -34,29 +36,29 @@ public sealed class GeminiLiveClient : IAsyncDisposable
         var endpoint = new Uri($"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={apiKey}");
         await _webSocket.ConnectAsync(endpoint, ct);
 
-        var setupJson = JsonSerializer.Serialize(config, JsonOptions);
-        var setupBytes = Encoding.UTF8.GetBytes(setupJson);
-        await _webSocket.SendAsync(setupBytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+        await SendJsonMessageAsync(config, ct);
 
         _logger.LogInformation("Gemini session connected. SessionId={SessionId}", _sessionId);
     }
 
     public async Task SendAudioChunkAsync(byte[] pcmData, CancellationToken ct)
     {
-        var message = new
-        {
-            realtimeInput = new
-            {
-                mediaChunks = new[]
-                {
-                    new { mimeType = "audio/pcm;rate=16000", data = Convert.ToBase64String(pcmData) }
-                }
-            }
-        };
+        var message = GeminiLiveRequestFactory.CreateAudioInput(pcmData);
+        await SendJsonMessageAsync(message, ct);
+    }
 
-        var json = JsonSerializer.Serialize(message, JsonOptions);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+    public async Task SendToolResponsesAsync(IReadOnlyList<GeminiFunctionResponse> responses, CancellationToken ct)
+    {
+        if (responses.Count == 0)
+            return;
+
+        var message = GeminiLiveRequestFactory.CreateToolResponse(responses);
+        await SendJsonMessageAsync(message, ct);
+
+        _logger.LogDebug(
+            "Sent {Count} tool response(s) to Gemini. SessionId={SessionId}",
+            responses.Count,
+            _sessionId);
     }
 
     public async IAsyncEnumerable<GeminiMessage> ReceiveMessagesAsync(
@@ -116,7 +118,24 @@ public sealed class GeminiLiveClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await CloseAsync(CancellationToken.None);
+        _sendLock.Dispose();
         _webSocket.Dispose();
+    }
+
+    private async Task SendJsonMessageAsync<TMessage>(TMessage message, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(message, JsonOptions);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 }
 
@@ -130,6 +149,9 @@ public sealed record GeminiMessage
 
     [JsonPropertyName("toolCall")]
     public GeminiToolCall? ToolCall { get; init; }
+
+    [JsonPropertyName("toolCallCancellation")]
+    public GeminiToolCallCancellation? ToolCallCancellation { get; init; }
 }
 
 public sealed record GeminiServerContent
@@ -169,6 +191,12 @@ public sealed record GeminiToolCall
 {
     [JsonPropertyName("functionCalls")]
     public IReadOnlyList<GeminiFunctionCall> FunctionCalls { get; init; } = [];
+}
+
+public sealed record GeminiToolCallCancellation
+{
+    [JsonPropertyName("ids")]
+    public IReadOnlyList<string> Ids { get; init; } = [];
 }
 
 public sealed record GeminiFunctionCall

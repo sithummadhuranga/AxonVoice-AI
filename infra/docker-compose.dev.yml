@@ -1,52 +1,52 @@
 # Local development overrides.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Usage from the repository root:
+#   docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build
 #
 # What this override does:
-# - Exposes service ports on localhost for direct debugging / Swagger UI
-# - Sets ASPNETCORE_ENVIRONMENT=Development so Swagger endpoints are active
-# - REMOVES the Ollama and ollama-init containers — in development, run Ollama
-#   natively on your host machine for better GPU access and faster model loading.
-#   Install from https://ollama.com and run: ollama pull nomic-embed-text && ollama pull llama3.2
-#   All services are pointed at http://host-gateway:11434 (Docker's host alias).
-# - Exposes PostgreSQL on localhost so `dotnet ef database update` runs from the host
-#   without going through Docker exec.
-
-version: '3.9'
+# - Removes the Ollama and ollama-init containers so Ollama runs natively on the host.
+# - Keeps the application topology production-like: only the gateway is public.
+# - Exposes PostgreSQL, Redis, and Qdrant on localhost for host-side migrations and inspection.
 
 services:
   gateway:
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-    ports:
+      PLATFORM_BASE_URL: http://localhost:8080
+    ports: !override
       - "8080:8080"
 
   session-relay:
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      # Point at the host machine's native Ollama instance.
-      OLLAMA_URL: http://host-gateway:11434
-    ports:
-      - "8081:8080"
+      PLATFORM_BASE_URL: http://localhost:8080
 
   agent-config:
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-    ports:
-      - "8082:8080"
+      PLATFORM_BASE_URL: http://localhost:8080
 
   knowledge-base:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      OLLAMA_URL: http://host-gateway:11434
-    ports:
-      - "8083:8080"
+      PLATFORM_BASE_URL: http://localhost:8080
+      OLLAMA_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   conversation-store:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      OLLAMA_URL: http://host-gateway:11434
-    ports:
-      - "8084:8080"
+      PLATFORM_BASE_URL: http://localhost:8080
+      OLLAMA_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dashboard:
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
 
   # Exposed on localhost so EF Core migrations can run from the host with:
   #   dotnet ef database update --project src/Services/AgentConfig

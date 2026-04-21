@@ -56,6 +56,36 @@ public sealed class FunctionCallInterceptorTests
         responses[0].ResponseJson.Should().Contain("\"DetectedLanguage\":\"si\"");
     }
 
+    [Fact]
+    public async Task HandleAsync_CancelledFunctionCall_DoesNotReturnResponse()
+    {
+        var kernelBuilder = Kernel.CreateBuilder();
+        kernelBuilder.Plugins.AddFromObject(new CancellablePlugin());
+        var kernel = kernelBuilder.Build();
+
+        var interceptor = new FunctionCallInterceptor(
+            kernel,
+            "en",
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            NullLogger<FunctionCallInterceptor>.Instance);
+
+        using var cancellationTokenSource = new CancellationTokenSource();
+        await cancellationTokenSource.CancelAsync();
+
+        var responses = await interceptor.HandleAsync(
+            [new GeminiFunctionCall
+            {
+                Id = "call-2",
+                Name = "cancellable_function"
+            }],
+            null!,
+            cancellationTokenSource.Token);
+
+        responses.Should().BeEmpty();
+    }
+
     private sealed class BookingEchoPlugin
     {
         [KernelFunction("create_pending_booking")]
@@ -83,6 +113,16 @@ public sealed class FunctionCallInterceptorTests
                 specialRequests));
         }
     }
+
+        private sealed class CancellablePlugin
+        {
+            [KernelFunction("cancellable_function")]
+            public Task<string> InvokeAsync(CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult("should-not-complete");
+            }
+        }
 
     private sealed record BookingEchoResult(
         string CustomerName,

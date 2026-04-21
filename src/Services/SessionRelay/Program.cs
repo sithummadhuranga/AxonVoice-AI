@@ -1,5 +1,6 @@
 using AxonVoiceAI.SessionRelay.Audio;
 using AxonVoiceAI.SessionRelay.Handlers;
+using AxonVoiceAI.Shared.Configuration;
 using AxonVoiceAI.Shared.Contracts;
 using AxonVoiceAI.Shared.SemanticKernel.Plugins;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -11,16 +12,13 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var jwtSigningKey = builder.Configuration["JWT_SIGNING_KEY"]
-    ?? throw new InvalidOperationException("JWT_SIGNING_KEY is required.");
-var platformBaseUrl = builder.Configuration["PLATFORM_BASE_URL"]
-    ?? throw new InvalidOperationException("PLATFORM_BASE_URL is required.");
-var redisUrl = builder.Configuration["REDIS_URL"]
-    ?? throw new InvalidOperationException("REDIS_URL is required.");
-var agentConfigUrl = builder.Configuration["AGENT_CONFIG_URL"]
-    ?? throw new InvalidOperationException("AGENT_CONFIG_URL is required.");
-var knowledgeBaseUrl = builder.Configuration["KNOWLEDGE_BASE_URL"]
-    ?? throw new InvalidOperationException("KNOWLEDGE_BASE_URL is required.");
+var jwtSigningKey = builder.Configuration.GetRequiredValue(builder.Environment, "JWT_SIGNING_KEY");
+var platformBaseUrl = builder.Configuration.GetRequiredValue(builder.Environment, "PLATFORM_BASE_URL");
+var redisUrl = builder.Configuration.GetRequiredValue(builder.Environment, "REDIS_URL");
+var agentConfigUrl = builder.Configuration.GetRequiredValue(builder.Environment, "AGENT_CONFIG_URL");
+var knowledgeBaseUrl = builder.Configuration.GetRequiredValue(builder.Environment, "KNOWLEDGE_BASE_URL");
+
+builder.Services.AddPlatformDataProtection(builder.Configuration, builder.Environment, "AxonVoiceAI.SessionRelay");
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisUrl));

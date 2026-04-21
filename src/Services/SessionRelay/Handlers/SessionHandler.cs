@@ -6,6 +6,7 @@ using AxonVoiceAI.Shared.Contracts;
 using AxonVoiceAI.Shared.DTOs;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 
 namespace AxonVoiceAI.SessionRelay.Handlers;
@@ -104,32 +105,171 @@ public sealed class SessionHandler
         }
     }
 
-    private static async Task ForwardOutboundAudioAsync(
+    private async Task ForwardOutboundAudioAsync(
         GeminiLiveClient geminiClient,
         IRealtimeAudioChannel channel,
         FunctionCallInterceptor interceptor,
         CancellationToken ct)
     {
-        await foreach (var message in geminiClient.ReceiveMessagesAsync(ct))
-        {
-            if (message.ToolCall is { FunctionCalls.Count: > 0 })
-            {
-                var responses = await interceptor.HandleAsync(message.ToolCall.FunctionCalls, geminiClient, ct);
-                // Tool responses are queued back to Gemini via the relay's response channel (future wiring).
-                continue;
-            }
+        var pendingToolTasks = new List<Task>();
+        var pendingToolCalls = new ConcurrentDictionary<string, PendingToolCall>(StringComparer.Ordinal);
 
-            if (message.ServerContent?.ModelTurn is { Parts.Count: > 0 })
+        try
+        {
+            await foreach (var message in geminiClient.ReceiveMessagesAsync(ct))
             {
-                foreach (var part in message.ServerContent.ModelTurn.Parts)
+                pendingToolTasks.RemoveAll(task => task.IsCompleted);
+
+                if (message.ToolCall is { FunctionCalls.Count: > 0 })
                 {
-                    if (part.InlineData is { MimeType: var mime } inlineData && mime.StartsWith("audio/"))
+                    pendingToolTasks.Add(HandleToolCallsAsync(geminiClient, interceptor, message.ToolCall.FunctionCalls, pendingToolCalls, ct));
+                    continue;
+                }
+
+                if (message.ToolCallCancellation is { Ids.Count: > 0 })
+                {
+                    CancelPendingToolCalls(message.ToolCallCancellation.Ids, pendingToolCalls);
+                    continue;
+                }
+
+                if (message.ServerContent?.ModelTurn is { Parts.Count: > 0 })
+                {
+                    foreach (var part in message.ServerContent.ModelTurn.Parts)
                     {
-                        var audioBytes = Convert.FromBase64String(inlineData.Data);
-                        await channel.SendOutboundAudioAsync(audioBytes, ct);
+                        if (part.InlineData is { MimeType: var mime } inlineData && mime.StartsWith("audio/"))
+                        {
+                            var audioBytes = Convert.FromBase64String(inlineData.Data);
+                            await channel.SendOutboundAudioAsync(audioBytes, ct);
+                        }
                     }
                 }
             }
+        }
+        finally
+        {
+            if (pendingToolTasks.Count > 0)
+            {
+                await Task.WhenAll(pendingToolTasks).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+
+            foreach (var pendingToolCall in pendingToolCalls.Values)
+            {
+                pendingToolCall.Dispose();
+            }
+        }
+    }
+
+    private async Task HandleToolCallsAsync(
+        GeminiLiveClient geminiClient,
+        FunctionCallInterceptor interceptor,
+        IReadOnlyList<GeminiFunctionCall> functionCalls,
+        ConcurrentDictionary<string, PendingToolCall> pendingToolCalls,
+        CancellationToken ct)
+    {
+        var batchCalls = RegisterPendingToolCalls(functionCalls, pendingToolCalls, ct);
+        if (batchCalls.Count == 0)
+            return;
+
+        try
+        {
+            var acknowledgmentTask = TrySendAcknowledgmentAsync(interceptor, geminiClient, ct);
+            var responseTasks = batchCalls
+                .Select(pendingToolCall => interceptor.HandleSingleAsync(pendingToolCall.FunctionCall, pendingToolCall.CancellationTokenSource.Token))
+                .ToArray();
+
+            await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+
+            var responses = batchCalls
+                .Select((pendingToolCall, index) => new
+                {
+                    PendingToolCall = pendingToolCall,
+                    Response = responseTasks[index].Result,
+                })
+                .Where(static item => !item.PendingToolCall.CancellationTokenSource.IsCancellationRequested && item.Response is not null)
+                .Select(static item => item.Response!)
+                .ToArray();
+
+            if (responses.Length > 0)
+            {
+                await geminiClient.SendToolResponsesAsync(responses, ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Tool call handling failed before responses could be delivered to Gemini.");
+        }
+        finally
+        {
+            foreach (var batchCall in batchCalls)
+            {
+                pendingToolCalls.TryRemove(batchCall.FunctionCall.Id, out _);
+                batchCall.Dispose();
+            }
+        }
+    }
+
+    private List<PendingToolCall> RegisterPendingToolCalls(
+        IReadOnlyList<GeminiFunctionCall> functionCalls,
+        ConcurrentDictionary<string, PendingToolCall> pendingToolCalls,
+        CancellationToken ct)
+    {
+        var batchCalls = new List<PendingToolCall>(functionCalls.Count);
+
+        foreach (var functionCall in functionCalls)
+        {
+            var pendingToolCall = new PendingToolCall(functionCall, CancellationTokenSource.CreateLinkedTokenSource(ct));
+
+            if (!pendingToolCalls.TryAdd(functionCall.Id, pendingToolCall))
+            {
+                pendingToolCall.Dispose();
+                _logger.LogWarning("Received duplicate Gemini tool call id {ToolCallId}; ignoring duplicate.", functionCall.Id);
+                continue;
+            }
+
+            batchCalls.Add(pendingToolCall);
+        }
+
+        return batchCalls;
+    }
+
+    private void CancelPendingToolCalls(
+        IReadOnlyList<string> ids,
+        ConcurrentDictionary<string, PendingToolCall> pendingToolCalls)
+    {
+        foreach (var id in ids)
+        {
+            if (pendingToolCalls.TryGetValue(id, out var pendingToolCall))
+            {
+                if (pendingToolCall.TryCancel())
+                {
+                    _logger.LogInformation("Cancelled Gemini tool call {ToolCallId}.", id);
+                }
+
+                continue;
+            }
+
+            _logger.LogDebug("Received Gemini tool call cancellation for unknown or completed call {ToolCallId}.", id);
+        }
+    }
+
+    private async Task TrySendAcknowledgmentAsync(
+        FunctionCallInterceptor interceptor,
+        GeminiLiveClient geminiClient,
+        CancellationToken ct)
+    {
+        try
+        {
+            await interceptor.SendAcknowledgmentAsync(geminiClient, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Tool call acknowledgment failed; continuing with plugin execution.");
         }
     }
 
@@ -179,5 +319,38 @@ public sealed class SessionHandler
         foreach (var plugin in _plugins)
             builder.Plugins.Add(plugin);
         return builder.Build();
+    }
+
+    private sealed class PendingToolCall(GeminiFunctionCall functionCall, CancellationTokenSource cancellationTokenSource) : IDisposable
+    {
+        private int _disposed;
+
+        public GeminiFunctionCall FunctionCall { get; } = functionCall;
+
+        public CancellationTokenSource CancellationTokenSource { get; } = cancellationTokenSource;
+
+        public bool TryCancel()
+        {
+            if (Volatile.Read(ref _disposed) != 0)
+                return false;
+
+            try
+            {
+                CancellationTokenSource.Cancel();
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                CancellationTokenSource.Dispose();
+            }
+        }
     }
 }
