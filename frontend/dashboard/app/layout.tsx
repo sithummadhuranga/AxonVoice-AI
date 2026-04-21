@@ -44,7 +44,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const apiUrl = process.env.AXONVOICE_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? null;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.AXONVOICE_API_URL ?? null;
 
   return (
     <html lang="en" className={`${manrope.variable} ${ibmPlexMono.variable}`}>
@@ -83,7 +83,7 @@ export default function RootLayout({
                 API origin
               </p>
               <p className="mt-3 break-all text-sm leading-6 text-sidebar-foreground">
-                {apiUrl ?? 'Set NEXT_PUBLIC_API_URL to connect the dashboard.'}
+                {apiUrl ?? 'Set NEXT_PUBLIC_API_URL or AXONVOICE_API_URL to connect the dashboard.'}
               </p>
             </section>
 

@@ -27,7 +27,15 @@ A production-grade, self-hostable, multi-tenant real-time voice agent platform. 
 - 8 GB RAM minimum (16 GB recommended)
 - A Google Gemini API key (per tenant — see [BYOK model](#byok-model))
 
-### Running Locally
+### Supported Local Workflows
+
+- Docker Compose is the supported full-stack local environment.
+- The recommended local Docker flow uses the development override so the stack stays containerized while Ollama runs on the host.
+- Direct `dotnet run` or IDE launches for backend services are supported for debugging, but secrets must come from .NET User Secrets or environment variables.
+- `.env` is for Docker Compose only. It is not loaded by `dotnet run`.
+- Internal Docker service addresses are not taken from `.env`; Compose wires PostgreSQL, Redis, Qdrant, and Ollama by service name.
+
+### Running The Full Stack With Docker
 
 ```bash
 # 1. Clone
@@ -36,17 +44,35 @@ cd AxonVoice-AI
 
 # 2. Configure environment
 cp .env.example .env
-# Edit .env — set PLATFORM_MASTER_KEY, JWT_SIGNING_KEY, POSTGRES_PASSWORD at minimum
+# Edit .env — set PLATFORM_MASTER_KEY, JWT_SIGNING_KEY, POSTGRES_PASSWORD,
+# DATA_PROTECTION_CERTIFICATE_BASE64, and DATA_PROTECTION_CERTIFICATE_PASSWORD.
+# Keep PLATFORM_BASE_URL=http://localhost for the base compose file.
 
-# 3. Start the full stack
-docker compose -f infra/docker-compose.yml up -d
+# 3. Start the full stack with the host-Ollama development override
+docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build
 
-# 4. Wait for Ollama model downloads (first run only — ~2–5 minutes)
-docker compose -f infra/docker-compose.yml logs -f ollama-init
-
-# 5. Open the tenant dashboard
-open http://localhost:3000
+# 4. Open the tenant dashboard through the gateway
+open http://localhost:8080
 ```
+
+The gateway is the only public entrypoint in Docker. The dashboard is proxied at `/`, the API stays under `/api/*`, the relay WebSocket is exposed at `/ws/session`, and the embeddable widget assets are served at `/widget/*`.
+
+The backend containers now persist ASP.NET Core DataProtection keys in a shared Docker volume and require a password-protected PFX to encrypt those keys at rest. For local Docker runs, generate a self-signed development certificate or use an internal PKI-issued certificate, export it as a password-protected PFX, and base64-encode the file contents into `DATA_PROTECTION_CERTIFICATE_BASE64`.
+
+If you want Ollama containerized instead of using the host installation, run the base compose file without `infra/docker-compose.dev.yml`.
+
+### Direct Backend Debugging Without Docker Secrets
+
+All backend entry projects share one local User Secrets store. Set the values once against any backend project, then run the service you want to debug from the host.
+
+```bash
+# Example: write shared backend secrets via the AgentConfig project
+dotnet user-secrets set "JWT_SIGNING_KEY" "<base64-signing-key>" --project src/Services/AgentConfig/AxonVoiceAI.AgentConfig.csproj
+dotnet user-secrets set "PLATFORM_MASTER_KEY" "<base64-master-key>" --project src/Services/AgentConfig/AxonVoiceAI.AgentConfig.csproj
+dotnet user-secrets set "POSTGRES_CONNECTION_STRING" "Host=localhost;Port=5432;Database=voiceagent;Username=voiceagent;Password=change_me_in_production" --project src/Services/AgentConfig/AxonVoiceAI.AgentConfig.csproj
+```
+
+The committed `launchSettings.json` files provide non-secret localhost defaults for `PLATFORM_BASE_URL`, Redis, Ollama, Qdrant, and the internal service URLs. That keeps local debugging convenient without checking secrets into the repository.
 
 ## Continuous Integration
 

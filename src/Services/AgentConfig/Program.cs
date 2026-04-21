@@ -1,6 +1,7 @@
 using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Repositories;
 using AxonVoiceAI.AgentConfig.Services;
+using AxonVoiceAI.Shared.Configuration;
 using AxonVoiceAI.Shared.Contracts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -11,16 +12,13 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Configuration ──────────────────────────────────────────────────────────────
-var connectionString = builder.Configuration["POSTGRES_CONNECTION_STRING"]
-    ?? throw new InvalidOperationException("POSTGRES_CONNECTION_STRING is required.");
-var redisConnectionString = builder.Configuration["REDIS_URL"]
-    ?? throw new InvalidOperationException("REDIS_URL is required.");
-var masterKey = builder.Configuration["PLATFORM_MASTER_KEY"]
-    ?? throw new InvalidOperationException("PLATFORM_MASTER_KEY is required.");
-var jwtSigningKey = builder.Configuration["JWT_SIGNING_KEY"]
-    ?? throw new InvalidOperationException("JWT_SIGNING_KEY is required.");
-var platformBaseUrl = builder.Configuration["PLATFORM_BASE_URL"]
-    ?? throw new InvalidOperationException("PLATFORM_BASE_URL is required.");
+var connectionString = builder.Configuration.GetRequiredValue(builder.Environment, "POSTGRES_CONNECTION_STRING", "POSTGRES_URL");
+var redisConnectionString = builder.Configuration.GetRequiredValue(builder.Environment, "REDIS_URL");
+var masterKey = builder.Configuration.GetRequiredValue(builder.Environment, "PLATFORM_MASTER_KEY");
+var jwtSigningKey = builder.Configuration.GetRequiredValue(builder.Environment, "JWT_SIGNING_KEY");
+var platformBaseUrl = builder.Configuration.GetRequiredValue(builder.Environment, "PLATFORM_BASE_URL");
+
+builder.Services.AddPlatformDataProtection(builder.Configuration, builder.Environment, "AxonVoiceAI.AgentConfig");
 
 // ── Database ───────────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<AgentConfigDbContext>(options =>

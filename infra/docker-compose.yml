@@ -1,24 +1,23 @@
-version: '3.9'
-
 services:
   # ─── API Gateway ────────────────────────────────────────────────────────────
   gateway:
     build:
-      context: ../src/Gateway
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile.service
+      args:
+        PROJECT_FILE: src/Gateway/AxonVoiceAI.Gateway.csproj
+    command: AxonVoiceAI.Gateway.dll
     ports:
       - "80:8080"
-      - "443:8443"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://+:8080"
-      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
+      ASPNETCORE_HTTP_PORTS: "8080"
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL}
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
-      REDIS_URL: ${REDIS_URL}
-      SESSION_RELAY_URL: http://session-relay:8080
-      AGENT_CONFIG_URL: http://agent-config:8080
-      KNOWLEDGE_BASE_URL: http://knowledge-base:8080
-      CONVERSATION_STORE_URL: http://conversation-store:8080
+      REDIS_URL: redis:6379,abortConnect=false
+      DATA_PROTECTION_KEYS_DIRECTORY: /var/axonvoice/dataprotection
+      DATA_PROTECTION_CERTIFICATE_BASE64: ${DATA_PROTECTION_CERTIFICATE_BASE64}
+      DATA_PROTECTION_CERTIFICATE_PASSWORD: ${DATA_PROTECTION_CERTIFICATE_PASSWORD}
     depends_on:
       session-relay:
         condition: service_started
@@ -28,9 +27,15 @@ services:
         condition: service_started
       conversation-store:
         condition: service_started
+      dashboard:
+        condition: service_started
+      widget:
+        condition: service_started
       redis:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - dataprotection_keys:/var/axonvoice/dataprotection
     networks:
       - internal
       - public
@@ -38,47 +43,55 @@ services:
   # ─── Session Relay ──────────────────────────────────────────────────────────
   session-relay:
     build:
-      context: ../src/Services/SessionRelay
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile.service
+      args:
+        PROJECT_FILE: src/Services/SessionRelay/AxonVoiceAI.SessionRelay.csproj
+    command: AxonVoiceAI.SessionRelay.dll
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://+:8080"
-      POSTGRES_URL: ${POSTGRES_URL}
-      REDIS_URL: ${REDIS_URL}
-      QDRANT_URL: ${QDRANT_URL}
-      OLLAMA_URL: ${OLLAMA_URL}
-      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
+      ASPNETCORE_HTTP_PORTS: "8080"
+      REDIS_URL: redis:6379,abortConnect=false
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL}
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
       AGENT_CONFIG_URL: http://agent-config:8080
       KNOWLEDGE_BASE_URL: http://knowledge-base:8080
-      CONVERSATION_STORE_URL: http://conversation-store:8080
-      DEFAULT_SESSION_TIMEOUT_SEC: ${DEFAULT_SESSION_TIMEOUT_SEC:-600}
-      DEFAULT_SILENCE_TIMEOUT_SEC: ${DEFAULT_SILENCE_TIMEOUT_SEC:-90}
+      DATA_PROTECTION_KEYS_DIRECTORY: /var/axonvoice/dataprotection
+      DATA_PROTECTION_CERTIFICATE_BASE64: ${DATA_PROTECTION_CERTIFICATE_BASE64}
+      DATA_PROTECTION_CERTIFICATE_PASSWORD: ${DATA_PROTECTION_CERTIFICATE_PASSWORD}
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
+      agent-config:
+        condition: service_started
+      knowledge-base:
+        condition: service_started
     restart: unless-stopped
+    volumes:
+      - dataprotection_keys:/var/axonvoice/dataprotection
     networks:
       - internal
 
   # ─── Agent Config ───────────────────────────────────────────────────────────
   agent-config:
     build:
-      context: ../src/Services/AgentConfig
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile.service
+      args:
+        PROJECT_FILE: src/Services/AgentConfig/AxonVoiceAI.AgentConfig.csproj
+    command: AxonVoiceAI.AgentConfig.dll
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://+:8080"
-      POSTGRES_URL: ${POSTGRES_URL}
-      REDIS_URL: ${REDIS_URL}
+      ASPNETCORE_HTTP_PORTS: "8080"
+      POSTGRES_CONNECTION_STRING: Host=postgres;Port=5432;Database=${POSTGRES_DB:-voiceagent};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      POSTGRES_URL: ${POSTGRES_URL:-}
+      REDIS_URL: redis:6379,abortConnect=false
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL}
       PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      DATA_PROTECTION_KEYS_DIRECTORY: /var/axonvoice/dataprotection
+      DATA_PROTECTION_CERTIFICATE_BASE64: ${DATA_PROTECTION_CERTIFICATE_BASE64}
+      DATA_PROTECTION_CERTIFICATE_PASSWORD: ${DATA_PROTECTION_CERTIFICATE_PASSWORD}
       DEFAULT_RATE_LIMIT_DAILY: ${DEFAULT_RATE_LIMIT_DAILY:-1000}
       DEFAULT_RATE_LIMIT_CONCURRENT: ${DEFAULT_RATE_LIMIT_CONCURRENT:-20}
       DEFAULT_BOOKING_HOLD_MINUTES: ${DEFAULT_BOOKING_HOLD_MINUTES:-30}
@@ -88,23 +101,36 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - dataprotection_keys:/var/axonvoice/dataprotection
     networks:
       - internal
 
   # ─── Knowledge Base ─────────────────────────────────────────────────────────
   knowledge-base:
     build:
-      context: ../src/Services/KnowledgeBase
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile.service
+      args:
+        PROJECT_FILE: src/Services/KnowledgeBase/AxonVoiceAI.KnowledgeBase.csproj
+    command: AxonVoiceAI.KnowledgeBase.dll
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://+:8080"
-      POSTGRES_URL: ${POSTGRES_URL}
-      QDRANT_URL: ${QDRANT_URL}
-      OLLAMA_URL: ${OLLAMA_URL}
+      ASPNETCORE_HTTP_PORTS: "8080"
+      POSTGRES_CONNECTION_STRING: Host=postgres;Port=5432;Database=${POSTGRES_DB:-voiceagent};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      POSTGRES_URL: ${POSTGRES_URL:-}
+      QDRANT_URL: http://qdrant:6334
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      DATA_PROTECTION_KEYS_DIRECTORY: /var/axonvoice/dataprotection
+      DATA_PROTECTION_CERTIFICATE_BASE64: ${DATA_PROTECTION_CERTIFICATE_BASE64}
+      DATA_PROTECTION_CERTIFICATE_PASSWORD: ${DATA_PROTECTION_CERTIFICATE_PASSWORD}
     volumes:
       - document_uploads:/app/uploads
+      - dataprotection_keys:/var/axonvoice/dataprotection
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,30 +145,52 @@ services:
   # ─── Conversation Store ─────────────────────────────────────────────────────
   conversation-store:
     build:
-      context: ../src/Services/ConversationStore
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Dockerfile.service
+      args:
+        PROJECT_FILE: src/Services/ConversationStore/AxonVoiceAI.ConversationStore.csproj
+    command: AxonVoiceAI.ConversationStore.dll
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://+:8080"
-      POSTGRES_URL: ${POSTGRES_URL}
-      OLLAMA_URL: ${OLLAMA_URL}
+      ASPNETCORE_HTTP_PORTS: "8080"
+      POSTGRES_CONNECTION_STRING: Host=postgres;Port=5432;Database=${POSTGRES_DB:-voiceagent};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      POSTGRES_URL: ${POSTGRES_URL:-}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_SUMMARY_MODEL: ${OLLAMA_SUMMARY_MODEL:-}
       OLLAMA_COMPLETION_MODEL: ${OLLAMA_COMPLETION_MODEL:-llama3.2}
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      DATA_PROTECTION_KEYS_DIRECTORY: /var/axonvoice/dataprotection
+      DATA_PROTECTION_CERTIFICATE_BASE64: ${DATA_PROTECTION_CERTIFICATE_BASE64}
+      DATA_PROTECTION_CERTIFICATE_PASSWORD: ${DATA_PROTECTION_CERTIFICATE_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
       ollama:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - dataprotection_keys:/var/axonvoice/dataprotection
     networks:
       - internal
 
   # ─── Tenant Dashboard ───────────────────────────────────────────────────────
   dashboard:
     build:
-      context: ../frontend/dashboard
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: frontend/dashboard/Dockerfile
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      AXONVOICE_API_URL: http://gateway:8080
+      NEXT_PUBLIC_API_URL: ${PLATFORM_BASE_URL}
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ─── Embeddable Widget Assets ───────────────────────────────────────────────
+  widget:
+    build:
+      context: ..
+      dockerfile: frontend/widget/Dockerfile
     restart: unless-stopped
     networks:
       - internal
@@ -189,7 +237,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -252,6 +300,7 @@ networks:
 
 # ─── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
+  dataprotection_keys:
   postgres_data:
   redis_data:
   qdrant_data:

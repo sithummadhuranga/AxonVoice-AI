@@ -91,7 +91,7 @@ export function getErrorMessage(error: unknown): string {
 
 async function requestJson<T>(path: string, options?: { allowNotFound?: boolean }): Promise<T | null> {
   if (!apiBaseUrl) {
-    throw new ApiClientError('Set NEXT_PUBLIC_API_URL before attempting to load dashboard data.');
+    throw new ApiClientError('Set AXONVOICE_API_URL or NEXT_PUBLIC_API_URL before attempting to load dashboard data.');
   }
 
   const response = await fetch(`${apiBaseUrl}${path}`, {

@@ -47,7 +47,7 @@ public sealed class SessionTokenService
             signingCredentials: credentials);
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
-        var wsUrl = $"{_platformBaseUrl.Replace("https://", "wss://").Replace("http://", "ws://")}/relay/connect";
+        var wsUrl = $"{_platformBaseUrl.Replace("https://", "wss://").Replace("http://", "ws://")}/ws/session";
 
         return new SessionTokenResponse(tokenString, wsUrl, expiresAt);
     }

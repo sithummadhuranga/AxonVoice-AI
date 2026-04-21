@@ -2,35 +2,28 @@ using AxonVoiceAI.KnowledgeBase.Data;
 using AxonVoiceAI.KnowledgeBase.Ingestion;
 using AxonVoiceAI.KnowledgeBase.Providers;
 using AxonVoiceAI.KnowledgeBase.Retrieval;
+using AxonVoiceAI.Shared.Configuration;
 using AxonVoiceAI.Shared.Contracts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Qdrant.Client;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration["POSTGRES_CONNECTION_STRING"]
-    ?? throw new InvalidOperationException("POSTGRES_CONNECTION_STRING is required.");
-var jwtSigningKey = builder.Configuration["JWT_SIGNING_KEY"]
-    ?? throw new InvalidOperationException("JWT_SIGNING_KEY is required.");
-var platformBaseUrl = builder.Configuration["PLATFORM_BASE_URL"]
-    ?? throw new InvalidOperationException("PLATFORM_BASE_URL is required.");
-var ollamaUrl = builder.Configuration["OLLAMA_URL"]
-    ?? throw new InvalidOperationException("OLLAMA_URL is required.");
-var ollamaModel = builder.Configuration["OLLAMA_EMBED_MODEL"] ?? "nomic-embed-text";
-var qdrantUrl = builder.Configuration["QDRANT_URL"]
-    ?? throw new InvalidOperationException("QDRANT_URL is required.");
+var connectionString = builder.Configuration.GetRequiredValue(builder.Environment, "POSTGRES_CONNECTION_STRING", "POSTGRES_URL");
+var jwtSigningKey = builder.Configuration.GetRequiredValue(builder.Environment, "JWT_SIGNING_KEY");
+var platformBaseUrl = builder.Configuration.GetRequiredValue(builder.Environment, "PLATFORM_BASE_URL");
+var ollamaUrl = builder.Configuration.GetRequiredValue(builder.Environment, "OLLAMA_URL");
+var ollamaModel = builder.Configuration.GetValueOrDefault("nomic-embed-text", "OLLAMA_EMBED_MODEL", "OLLAMA_EMBEDDING_MODEL");
+var qdrantUrl = builder.Configuration.GetRequiredValue(builder.Environment, "QDRANT_URL");
+
+builder.Services.AddPlatformDataProtection(builder.Configuration, builder.Environment, "AxonVoiceAI.KnowledgeBase");
 
 builder.Services.AddDbContext<KnowledgeBaseDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-builder.Services.AddSingleton(_ =>
-{
-    var uri = new Uri(qdrantUrl);
-    return new QdrantClient(uri.Host, uri.Port);
-});
+builder.Services.AddSingleton(_ => QdrantClientFactory.Create(qdrantUrl));
 
 builder.Services.AddSingleton<QdrantVectorStore>();
 
@@ -47,7 +40,7 @@ builder.Services.AddSingleton<IEmbeddingProvider>(sp =>
 builder.Services.AddHttpClient("ollama");
 builder.Services.AddSingleton<PdfExtractor>();
 builder.Services.AddSingleton<DocxExtractor>();
-builder.Services.AddScoped<KnowledgeRetriever>();
+builder.Services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>();
 builder.Services.AddSingleton<DocumentIngestionJob>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DocumentIngestionJob>());
 

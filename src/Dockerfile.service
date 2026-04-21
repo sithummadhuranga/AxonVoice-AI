@@ -1,0 +1,28 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+
+ARG PROJECT_FILE
+
+WORKDIR /src
+
+COPY ["src/Shared/AxonVoiceAI.Shared.csproj", "src/Shared/"]
+COPY ["src/Gateway/AxonVoiceAI.Gateway.csproj", "src/Gateway/"]
+COPY ["src/Services/AgentConfig/AxonVoiceAI.AgentConfig.csproj", "src/Services/AgentConfig/"]
+COPY ["src/Services/ConversationStore/AxonVoiceAI.ConversationStore.csproj", "src/Services/ConversationStore/"]
+COPY ["src/Services/KnowledgeBase/AxonVoiceAI.KnowledgeBase.csproj", "src/Services/KnowledgeBase/"]
+COPY ["src/Services/SessionRelay/AxonVoiceAI.SessionRelay.csproj", "src/Services/SessionRelay/"]
+
+RUN dotnet restore "$PROJECT_FILE"
+
+COPY src/ ./src/
+
+RUN dotnet publish "$PROJECT_FILE" -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+
+WORKDIR /app
+
+COPY --from=build /app/publish .
+
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet"]

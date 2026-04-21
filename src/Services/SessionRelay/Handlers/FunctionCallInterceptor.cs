@@ -17,7 +17,6 @@ namespace AxonVoiceAI.SessionRelay.Handlers;
 public sealed class FunctionCallInterceptor
 {
     private readonly Kernel _kernel;
-    private readonly IRealtimeAudioChannel _channel;
     private readonly ILogger<FunctionCallInterceptor> _logger;
     private readonly string _language;
     private readonly string _tenantId;
@@ -26,7 +25,6 @@ public sealed class FunctionCallInterceptor
 
     public FunctionCallInterceptor(
         Kernel kernel,
-        IRealtimeAudioChannel channel,
         string language,
         string tenantId,
         string agentId,
@@ -34,7 +32,6 @@ public sealed class FunctionCallInterceptor
         ILogger<FunctionCallInterceptor> logger)
     {
         _kernel = kernel;
-        _channel = channel;
         _language = language;
         _tenantId = tenantId;
         _agentId = agentId;
@@ -51,15 +48,21 @@ public sealed class FunctionCallInterceptor
         GeminiLiveClient geminiClient,
         CancellationToken ct)
     {
-        // Fire the acknowledgment audio in parallel with plugin dispatch.
         var acknowledgmentTask = SendAcknowledgmentAsync(geminiClient, ct);
-        var pluginDispatchTask = DispatchPluginsAsync(functionCalls, ct);
+        var responseTasks = functionCalls
+            .Select(functionCall => HandleSingleAsync(functionCall, ct))
+            .ToArray();
 
-        await Task.WhenAll(acknowledgmentTask, pluginDispatchTask);
-        return await pluginDispatchTask;
+        await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+
+        return responseTasks
+            .Select(task => task.Result)
+            .Where(static response => response is not null)
+            .Cast<GeminiFunctionResponse>()
+            .ToArray();
     }
 
-    private async Task SendAcknowledgmentAsync(GeminiLiveClient geminiClient, CancellationToken ct)
+    internal async Task SendAcknowledgmentAsync(GeminiLiveClient geminiClient, CancellationToken ct)
     {
         var phrase = AcknowledgmentPhrases.ForLanguage(_language);
         // Send the acknowledgment as a text turn so Gemini speaks it immediately.
@@ -72,22 +75,10 @@ public sealed class FunctionCallInterceptor
         await Task.CompletedTask;
     }
 
-    private async Task<IReadOnlyList<GeminiFunctionResponse>> DispatchPluginsAsync(
-        IReadOnlyList<GeminiFunctionCall> functionCalls,
-        CancellationToken ct)
-    {
-        var responses = new List<GeminiFunctionResponse>(functionCalls.Count);
+    internal Task<GeminiFunctionResponse?> HandleSingleAsync(GeminiFunctionCall functionCall, CancellationToken ct)
+        => InvokeSinglePluginAsync(functionCall, ct);
 
-        foreach (var call in functionCalls)
-        {
-            var response = await InvokeSinglePluginAsync(call, ct);
-            responses.Add(response);
-        }
-
-        return responses.AsReadOnly();
-    }
-
-    private async Task<GeminiFunctionResponse> InvokeSinglePluginAsync(
+    private async Task<GeminiFunctionResponse?> InvokeSinglePluginAsync(
         GeminiFunctionCall call,
         CancellationToken ct)
     {
@@ -118,6 +109,9 @@ public sealed class FunctionCallInterceptor
                 }
             }
 
+            ApplyArgumentAliases(arguments);
+            InjectSessionContextArguments(call.Name, arguments);
+
             // Search all loaded plugins for a function matching the name Gemini specified.
             KernelFunction? function = null;
             foreach (var plugin in _kernel.Plugins)
@@ -136,12 +130,49 @@ public sealed class FunctionCallInterceptor
 
             return new GeminiFunctionResponse(call.Id, call.Name, resultJson);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation(
+                "Plugin function {FunctionName} was cancelled before completion. CallId={CallId}",
+                call.Name,
+                call.Id);
+
+            return null;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Plugin function {FunctionName} threw an exception.", call.Name);
             var errorPayload = JsonSerializer.Serialize(new { error = ex.Message });
             return new GeminiFunctionResponse(call.Id, call.Name, errorPayload);
         }
+    }
+
+    private void InjectSessionContextArguments(string functionName, KernelArguments arguments)
+    {
+        arguments["agentId"] = _agentId;
+
+        if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal))
+        {
+            arguments["sessionId"] = _sessionId;
+            arguments["detectedLanguage"] = _language;
+        }
+    }
+
+    private static void ApplyArgumentAliases(KernelArguments arguments)
+    {
+        CopyArgument(arguments, "party_size", "partySize");
+        CopyArgument(arguments, "customer_name", "customerName");
+        CopyArgument(arguments, "contact_number", "customerPhone");
+        CopyArgument(arguments, "notes", "specialRequests");
+    }
+
+    private static void CopyArgument(KernelArguments arguments, string sourceName, string targetName)
+    {
+        if (arguments.ContainsName(targetName))
+            return;
+
+        if (arguments.TryGetValue(sourceName, out var value))
+            arguments[targetName] = value;
     }
 }
 

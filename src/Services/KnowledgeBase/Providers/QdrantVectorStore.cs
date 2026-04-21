@@ -56,6 +56,7 @@ public sealed class QdrantVectorStore
     }
 
     public async Task<IReadOnlyList<KnowledgeChunkDto>> SearchAsync(
+        Guid tenantId,
         Guid agentId,
         float[] queryVector,
         int topK,
@@ -66,14 +67,8 @@ public sealed class QdrantVectorStore
         {
             Must =
             {
-                new Condition
-                {
-                    Field = new FieldCondition
-                    {
-                        Key = "agent_id",
-                        Match = new Match { Text = agentId.ToString() }
-                    }
-                }
+                CreateTextMatchCondition("tenant_id", tenantId.ToString()),
+                CreateTextMatchCondition("agent_id", agentId.ToString())
             }
         };
 
@@ -113,6 +108,18 @@ public sealed class QdrantVectorStore
         };
 
         await _client.DeleteAsync(CollectionName, filter, cancellationToken: ct);
+    }
+
+    private static Condition CreateTextMatchCondition(string key, string value)
+    {
+        return new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = key,
+                Match = new Match { Text = value }
+            }
+        };
     }
 }
 

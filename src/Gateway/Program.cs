@@ -1,16 +1,16 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using AxonVoiceAI.Shared.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var jwtSigningKey = builder.Configuration["JWT_SIGNING_KEY"]
-    ?? throw new InvalidOperationException("JWT_SIGNING_KEY is required.");
-var platformBaseUrl = builder.Configuration["PLATFORM_BASE_URL"]
-    ?? throw new InvalidOperationException("PLATFORM_BASE_URL is required.");
-var redisUrl = builder.Configuration["REDIS_URL"]
-    ?? throw new InvalidOperationException("REDIS_URL is required.");
+var jwtSigningKey = builder.Configuration.GetRequiredValue(builder.Environment, "JWT_SIGNING_KEY");
+var platformBaseUrl = builder.Configuration.GetRequiredValue(builder.Environment, "PLATFORM_BASE_URL");
+var redisUrl = builder.Configuration.GetRequiredValue(builder.Environment, "REDIS_URL");
+
+builder.Services.AddPlatformDataProtection(builder.Configuration, builder.Environment, "AxonVoiceAI.Gateway");
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisUrl));
