@@ -1,9 +1,12 @@
 using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Repositories;
+using AxonVoiceAI.AgentConfig.Data.Entities;
 using AxonVoiceAI.AgentConfig.Services;
 using AxonVoiceAI.Shared.Configuration;
 using AxonVoiceAI.Shared.Contracts;
+using AxonVoiceAI.Shared.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
@@ -30,6 +33,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
 
 // ── Domain Services ────────────────────────────────────────────────────────────
 builder.Services.AddSingleton(_ => new ApiKeyEncryptionService(masterKey));
+builder.Services.AddScoped<IPasswordHasher<TenantUser>, PasswordHasher<TenantUser>>();
+builder.Services.AddScoped<ConsoleAuthenticationService>();
+builder.Services.AddSingleton(_ => new ConsoleTokenService(jwtSigningKey, platformBaseUrl));
 builder.Services.AddSingleton(_ => new SessionTokenService(jwtSigningKey, platformBaseUrl));
 builder.Services.AddScoped<IAvailabilityRepository, AvailabilityRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
@@ -51,7 +57,14 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(PlatformAuthorizationPolicyNames.ConsoleAccess, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(PlatformTokenClaims.TokenUse, PlatformTokenUses.Console);
+    });
+});
 builder.Services.AddControllers();
 
 var app = builder.Build();

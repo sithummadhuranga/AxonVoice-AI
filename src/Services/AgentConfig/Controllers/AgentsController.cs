@@ -2,6 +2,7 @@ using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Entities;
 using AxonVoiceAI.AgentConfig.Services;
 using AxonVoiceAI.Shared.DTOs;
+using AxonVoiceAI.Shared.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,8 +12,14 @@ namespace AxonVoiceAI.AgentConfig.Controllers;
 
 [ApiController]
 [Route("agents")]
+[Authorize(Policy = PlatformAuthorizationPolicyNames.ConsoleAccess)]
 public sealed class AgentsController : ControllerBase
 {
+    private static readonly string[] DefaultSupportedLanguages = ["si", "ta", "en"];
+    private static readonly string[] DefaultTools = ["check_availability", "create_pending_booking"];
+    private static readonly HashSet<string> SupportedLanguageCodes = ["si", "ta", "en"];
+    private static readonly HashSet<string> SupportedToolNames = ["check_availability", "create_pending_booking"];
+
     private readonly AgentConfigDbContext _db;
     private readonly SessionTokenService _sessionTokens;
     private readonly IConnectionMultiplexer _redis;
@@ -62,16 +69,29 @@ public sealed class AgentsController : ControllerBase
         var tenantExists = await _db.Tenants.AnyAsync(t => t.Id == tenantId, ct);
         if (!tenantExists) return Forbid();
 
+        var validationError = ValidateCreateRequest(request);
+        if (validationError is not null)
+        {
+            return BadRequest(new { error = validationError });
+        }
+
+        var primaryLanguage = NormalizePrimaryLanguage(request.PrimaryLanguage) ?? "si";
+        var supportedLanguages = NormalizeSupportedLanguages(request.SupportedLanguages, primaryLanguage);
+        var toolsEnabled = NormalizeTools(request.ToolsEnabled) ?? DefaultTools;
+
         var agent = new Agent
         {
             TenantId = tenantId,
-            Name = request.Name,
-            DisplayName = request.DisplayName,
-            PersonaPrompt = request.PersonaPrompt,
-            PrimaryLanguage = request.PrimaryLanguage ?? "si",
-            SupportedLanguages = request.SupportedLanguages ?? ["si", "ta", "en"],
-            VoiceName = request.VoiceName ?? "Aoede",
-            ToolsEnabled = request.ToolsEnabled ?? ["check_availability", "create_pending_booking"],
+            Name = request.Name.Trim(),
+            DisplayName = request.DisplayName.Trim(),
+            PersonaPrompt = request.PersonaPrompt.Trim(),
+            PrimaryLanguage = primaryLanguage,
+            SupportedLanguages = supportedLanguages,
+            VoiceName = NormalizeVoiceName(request.VoiceName) ?? "Aoede",
+            SessionTimeoutSeconds = request.SessionTimeoutSeconds ?? 600,
+            SilenceTimeoutSeconds = request.SilenceTimeoutSeconds ?? 90,
+            ToolsEnabled = toolsEnabled,
+            IsActive = request.IsActive ?? true,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
@@ -92,13 +112,29 @@ public sealed class AgentsController : ControllerBase
 
         if (agent is null) return NotFound();
 
-        if (request.DisplayName is not null) agent.DisplayName = request.DisplayName;
-        if (request.PersonaPrompt is not null) agent.PersonaPrompt = request.PersonaPrompt;
-        if (request.PrimaryLanguage is not null) agent.PrimaryLanguage = request.PrimaryLanguage;
-        if (request.SupportedLanguages is not null) agent.SupportedLanguages = request.SupportedLanguages;
-        if (request.VoiceName is not null) agent.VoiceName = request.VoiceName;
-        if (request.ToolsEnabled is not null) agent.ToolsEnabled = request.ToolsEnabled;
+        var validationError = ValidateUpdateRequest(request, agent);
+        if (validationError is not null)
+        {
+            return BadRequest(new { error = validationError });
+        }
+
+        if (request.Name is not null) agent.Name = request.Name.Trim();
+        if (request.DisplayName is not null) agent.DisplayName = request.DisplayName.Trim();
+        if (request.PersonaPrompt is not null) agent.PersonaPrompt = request.PersonaPrompt.Trim();
+
+        var primaryLanguage = NormalizePrimaryLanguage(request.PrimaryLanguage) ?? agent.PrimaryLanguage;
+        agent.PrimaryLanguage = primaryLanguage;
+
+        if (request.SupportedLanguages is not null || request.PrimaryLanguage is not null)
+        {
+            agent.SupportedLanguages = NormalizeSupportedLanguages(request.SupportedLanguages ?? agent.SupportedLanguages, primaryLanguage);
+        }
+
+        if (request.VoiceName is not null) agent.VoiceName = NormalizeVoiceName(request.VoiceName)!;
+        if (request.ToolsEnabled is not null) agent.ToolsEnabled = NormalizeTools(request.ToolsEnabled) ?? [];
         if (request.SessionTimeoutSeconds.HasValue) agent.SessionTimeoutSeconds = request.SessionTimeoutSeconds.Value;
+        if (request.SilenceTimeoutSeconds.HasValue) agent.SilenceTimeoutSeconds = request.SilenceTimeoutSeconds.Value;
+        if (request.IsActive.HasValue) agent.IsActive = request.IsActive.Value;
         agent.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(ct);
@@ -192,8 +228,270 @@ public sealed class AgentsController : ControllerBase
 
     private Guid ResolveTenantId()
     {
-        var claim = User.FindFirst("tenant_id")?.Value;
+        var claim = User.FindFirst(PlatformTokenClaims.TenantId)?.Value;
         return claim is not null && Guid.TryParse(claim, out var id) ? id : Guid.Empty;
+    }
+
+    private static string? ValidateCreateRequest(CreateAgentRequest request)
+    {
+        var nameError = ValidateRequiredText(request.Name, "Agent name", 255);
+        if (nameError is not null)
+        {
+            return nameError;
+        }
+
+        var displayNameError = ValidateRequiredText(request.DisplayName, "Display name", 255);
+        if (displayNameError is not null)
+        {
+            return displayNameError;
+        }
+
+        var personaError = ValidateRequiredText(request.PersonaPrompt, "Persona prompt", null);
+        if (personaError is not null)
+        {
+            return personaError;
+        }
+
+        var primaryLanguage = NormalizePrimaryLanguage(request.PrimaryLanguage) ?? "si";
+        var supportedLanguages = request.SupportedLanguages ?? DefaultSupportedLanguages;
+
+        return ValidateAgentConfiguration(
+            primaryLanguage,
+            supportedLanguages,
+            request.VoiceName,
+            request.ToolsEnabled,
+            request.SessionTimeoutSeconds ?? 600,
+            request.SilenceTimeoutSeconds ?? 90);
+    }
+
+    private static string? ValidateUpdateRequest(UpdateAgentRequest request, Agent agent)
+    {
+        if (request.Name is not null)
+        {
+            var nameError = ValidateRequiredText(request.Name, "Agent name", 255);
+            if (nameError is not null)
+            {
+                return nameError;
+            }
+        }
+
+        if (request.DisplayName is not null)
+        {
+            var displayNameError = ValidateRequiredText(request.DisplayName, "Display name", 255);
+            if (displayNameError is not null)
+            {
+                return displayNameError;
+            }
+        }
+
+        if (request.PersonaPrompt is not null)
+        {
+            var personaError = ValidateRequiredText(request.PersonaPrompt, "Persona prompt", null);
+            if (personaError is not null)
+            {
+                return personaError;
+            }
+        }
+
+        var primaryLanguage = NormalizePrimaryLanguage(request.PrimaryLanguage) ?? agent.PrimaryLanguage;
+        var supportedLanguages = request.SupportedLanguages ?? agent.SupportedLanguages;
+
+        return ValidateAgentConfiguration(
+            primaryLanguage,
+            supportedLanguages,
+            request.VoiceName ?? agent.VoiceName,
+            request.ToolsEnabled ?? agent.ToolsEnabled,
+            request.SessionTimeoutSeconds ?? agent.SessionTimeoutSeconds,
+            request.SilenceTimeoutSeconds ?? agent.SilenceTimeoutSeconds);
+    }
+
+    private static string? ValidateAgentConfiguration(
+        string primaryLanguage,
+        string[] supportedLanguages,
+        string? voiceName,
+        string[]? toolsEnabled,
+        int sessionTimeoutSeconds,
+        int silenceTimeoutSeconds)
+    {
+        if (!SupportedLanguageCodes.Contains(primaryLanguage))
+        {
+            return "Primary language must be one of: si, ta, en.";
+        }
+
+        var languageError = ValidateSupportedLanguages(supportedLanguages, primaryLanguage);
+        if (languageError is not null)
+        {
+            return languageError;
+        }
+
+        var voiceError = ValidateOptionalText(voiceName, "Voice name", 100);
+        if (voiceError is not null)
+        {
+            return voiceError;
+        }
+
+        var toolsError = ValidateTools(toolsEnabled);
+        if (toolsError is not null)
+        {
+            return toolsError;
+        }
+
+        if (sessionTimeoutSeconds <= 0)
+        {
+            return "Session timeout must be greater than zero.";
+        }
+
+        if (silenceTimeoutSeconds <= 0)
+        {
+            return "Silence timeout must be greater than zero.";
+        }
+
+        if (silenceTimeoutSeconds >= sessionTimeoutSeconds)
+        {
+            return "Silence timeout must be shorter than the session timeout.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateRequiredText(string value, string fieldName, int? maxLength)
+    {
+        var trimmedValue = value.Trim();
+        if (trimmedValue.Length == 0)
+        {
+            return $"{fieldName} is required.";
+        }
+
+        if (maxLength.HasValue && trimmedValue.Length > maxLength.Value)
+        {
+            return $"{fieldName} must be {maxLength.Value} characters or fewer.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateOptionalText(string? value, string fieldName, int maxLength)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var trimmedValue = value.Trim();
+        if (trimmedValue.Length == 0)
+        {
+            return $"{fieldName} is required.";
+        }
+
+        if (trimmedValue.Length > maxLength)
+        {
+            return $"{fieldName} must be {maxLength} characters or fewer.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateSupportedLanguages(string[] supportedLanguages, string primaryLanguage)
+    {
+        var normalizedLanguages = (supportedLanguages ?? DefaultSupportedLanguages)
+            .Select(language => language.Trim().ToLowerInvariant())
+            .Where(language => language.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedLanguages.Length == 0)
+        {
+            return "Supported languages must contain at least one language.";
+        }
+
+        if (normalizedLanguages.Any(language => !SupportedLanguageCodes.Contains(language)))
+        {
+            return "Supported languages must be one of: si, ta, en.";
+        }
+
+        if (!normalizedLanguages.Contains(primaryLanguage, StringComparer.Ordinal))
+        {
+            return "Supported languages must include the primary language.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateTools(string[]? toolsEnabled)
+    {
+        if (toolsEnabled is null)
+        {
+            return null;
+        }
+
+        var normalizedTools = toolsEnabled
+            .Select(tool => tool.Trim())
+            .Where(tool => tool.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedTools.Any(tool => !SupportedToolNames.Contains(tool)))
+        {
+            return "Tools enabled must contain only supported tool names.";
+        }
+
+        if (normalizedTools.Contains("create_pending_booking", StringComparer.Ordinal)
+            && !normalizedTools.Contains("check_availability", StringComparer.Ordinal))
+        {
+            return "Booking creation requires availability checking to stay enabled.";
+        }
+
+        return null;
+    }
+
+    private static string NormalizePrimaryLanguage(string? value) =>
+        value?.Trim().ToLowerInvariant() ?? string.Empty;
+
+    private static string[] NormalizeSupportedLanguages(string[]? values, string primaryLanguage)
+    {
+        var normalizedLanguages = (values ?? DefaultSupportedLanguages)
+            .Select(language => language.Trim().ToLowerInvariant())
+            .Where(language => language.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedLanguages.Any(language => !SupportedLanguageCodes.Contains(language)))
+        {
+            throw new InvalidOperationException("Supported languages must be one of: si, ta, en.");
+        }
+
+        return normalizedLanguages;
+    }
+
+    private static string? NormalizeVoiceName(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.Trim();
+    }
+
+    private static string[]? NormalizeTools(string[]? values)
+    {
+        if (values is null)
+        {
+            return null;
+        }
+
+        var normalizedTools = values
+            .Select(tool => tool.Trim())
+            .Where(tool => tool.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedTools.Any(tool => !SupportedToolNames.Contains(tool)))
+        {
+            throw new InvalidOperationException("Tools enabled must contain only supported tool names.");
+        }
+
+        return normalizedTools;
     }
 
     private static AgentDetailResponse MapToResponse(Agent a) =>
@@ -207,6 +505,8 @@ public record AgentDetailResponse(Guid Id, Guid TenantId, string Name, string Di
     string[] SupportedLanguages, string PrimaryLanguage, string VoiceName, string GeminiModel,
     int SessionTimeoutSeconds, int SilenceTimeoutSeconds, string[] ToolsEnabled, bool IsActive);
 public record CreateAgentRequest(string Name, string DisplayName, string PersonaPrompt,
-    string? PrimaryLanguage, string[]? SupportedLanguages, string? VoiceName, string[]? ToolsEnabled);
-public record UpdateAgentRequest(string? DisplayName, string? PersonaPrompt, string? PrimaryLanguage,
-    string[]? SupportedLanguages, string? VoiceName, string[]? ToolsEnabled, int? SessionTimeoutSeconds);
+    string? PrimaryLanguage, string[]? SupportedLanguages, string? VoiceName, string[]? ToolsEnabled,
+    int? SessionTimeoutSeconds, int? SilenceTimeoutSeconds, bool? IsActive);
+public record UpdateAgentRequest(string? Name, string? DisplayName, string? PersonaPrompt, string? PrimaryLanguage,
+    string[]? SupportedLanguages, string? VoiceName, string[]? ToolsEnabled, int? SessionTimeoutSeconds,
+    int? SilenceTimeoutSeconds, bool? IsActive);

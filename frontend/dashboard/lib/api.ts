@@ -1,3 +1,7 @@
+import 'server-only';
+
+import { getConsoleSession, type ConsoleSession } from '@/lib/console-session';
+
 export interface AgentSummary {
   id: string;
   name: string;
@@ -22,6 +26,16 @@ export interface AgentDetail {
   isActive: boolean;
 }
 
+export interface TenantDetail {
+  id: string;
+  name: string;
+  apiKeyHint: string | null;
+  defaultLanguage: string;
+  rateLimitDaily: number;
+  rateLimitConcurrent: number;
+  isActive: boolean;
+}
+
 export interface DashboardOverview {
   status: 'ready' | 'unavailable';
   message: string | null;
@@ -42,6 +56,10 @@ class ApiClientError extends Error {
 }
 
 const apiBaseUrl = (process.env.AXONVOICE_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+
+export function buildApiUrl(path: string): string {
+  return `${getApiBaseUrl()}${path}`;
+}
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
   try {
@@ -77,6 +95,21 @@ export async function getAgent(id: string): Promise<AgentDetail | null> {
   return requestJson<AgentDetail>(`/api/config/agents/${id}`, { allowNotFound: true });
 }
 
+export async function getCurrentTenant(): Promise<TenantDetail> {
+  const session = await getRequiredConsoleSession();
+  const tenant = await requestJson<TenantDetail>(`/api/config/tenants/${session.tenantId}`, { session });
+
+  if (!tenant) {
+    throw new ApiClientError('The tenant configuration could not be loaded.');
+  }
+
+  return tenant;
+}
+
+export function hasGeminiApiKeyConfigured(tenant: Pick<TenantDetail, 'apiKeyHint'>): boolean {
+  return typeof tenant.apiKeyHint === 'string' && tenant.apiKeyHint.trim().length > 0;
+}
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
     return error.message;
@@ -89,13 +122,17 @@ export function getErrorMessage(error: unknown): string {
   return 'The dashboard could not reach the API.';
 }
 
-async function requestJson<T>(path: string, options?: { allowNotFound?: boolean }): Promise<T | null> {
-  if (!apiBaseUrl) {
-    throw new ApiClientError('Set AXONVOICE_API_URL or NEXT_PUBLIC_API_URL before attempting to load dashboard data.');
-  }
+async function requestJson<T>(
+  path: string,
+  options?: { allowNotFound?: boolean; session?: ConsoleSession },
+): Promise<T | null> {
+  const session = options?.session ?? await getRequiredConsoleSession();
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+    },
   });
 
   if (options?.allowNotFound && response.status === 404) {
@@ -111,7 +148,7 @@ async function requestJson<T>(path: string, options?: { allowNotFound?: boolean 
 
 async function buildErrorMessage(response: Response): Promise<string> {
   if (response.status === 401 || response.status === 403) {
-    return 'The dashboard API rejected the request. Tenant authentication still needs to be wired into the console.';
+    return 'Your tenant console session is no longer valid. Sign in again to continue.';
   }
 
   if (response.status === 404) {
@@ -124,4 +161,21 @@ async function buildErrorMessage(response: Response): Promise<string> {
   }
 
   return `The dashboard API returned ${response.status}.`;
+}
+
+function getApiBaseUrl(): string {
+  if (!apiBaseUrl) {
+    throw new ApiClientError('Set AXONVOICE_API_URL or NEXT_PUBLIC_API_URL before attempting to load dashboard data.');
+  }
+
+  return apiBaseUrl;
+}
+
+async function getRequiredConsoleSession(): Promise<ConsoleSession> {
+  const session = await getConsoleSession();
+  if (!session) {
+    throw new ApiClientError('Sign in to access the tenant console.');
+  }
+
+  return session;
 }

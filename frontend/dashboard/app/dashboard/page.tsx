@@ -1,7 +1,16 @@
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { getDashboardOverview } from '@/lib/api';
+import { getCurrentTenant, getDashboardOverview, hasGeminiApiKeyConfigured } from '@/lib/api';
+import { requireConsoleSession } from '@/lib/console-session';
 
 export default async function DashboardPage() {
+  await requireConsoleSession();
+  const tenant = await getCurrentTenant();
+
+  if (!hasGeminiApiKeyConfigured(tenant)) {
+    redirect('/setup');
+  }
+
   const overview = await getDashboardOverview();
 
   return (
@@ -16,7 +25,7 @@ export default async function DashboardPage() {
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-muted">
             This console focuses on agent readiness first: languages, personas, tools, and session boundaries.
-            Live analytics can layer in after the authenticated tenant flow is connected.
+            Business hours, bookings, and knowledge operations can layer in on top of the authenticated tenant path.
           </p>
         </section>
 
@@ -25,7 +34,7 @@ export default async function DashboardPage() {
             Data status
           </p>
           <p className="mt-4 text-2xl font-semibold tracking-[-0.05em] text-foreground">
-            {overview.status === 'ready' ? 'Live configuration connected' : 'Awaiting dashboard API access'}
+            {overview.status === 'ready' ? 'Live configuration connected' : 'Configuration API needs attention'}
           </p>
           <p className="mt-3 text-sm leading-6 text-muted">
             {overview.message ?? 'The dashboard can read agent configuration data from the gateway route.'}
@@ -95,7 +104,7 @@ export default async function DashboardPage() {
           <div className="mt-6 grid gap-3">
             {[
               'Verify NEXT_PUBLIC_API_URL points to the gateway.',
-              'Wire dashboard authentication so tenant-scoped agent routes return live data.',
+              'Review the tenant Gemini API key in Setup before opening live voice traffic.',
               'Configure business hours and document ingestion before enabling public traffic.',
             ].map((item) => (
               <div key={item} className="rounded-3xl border border-line bg-white/70 px-5 py-4 text-sm leading-6 text-foreground">

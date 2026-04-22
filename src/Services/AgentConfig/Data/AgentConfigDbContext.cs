@@ -8,6 +8,7 @@ public class AgentConfigDbContext : DbContext
     public AgentConfigDbContext(DbContextOptions<AgentConfigDbContext> options) : base(options) { }
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<TenantUser> TenantUsers => Set<TenantUser>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<BusinessHours> BusinessHours => Set<BusinessHours>();
     public DbSet<ClosedDate> ClosedDates => Set<ClosedDate>();
@@ -32,6 +33,25 @@ public class AgentConfigDbContext : DbContext
             e.Property(t => t.IsActive).HasColumnName("is_active").HasDefaultValue(true);
             e.Property(t => t.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
             e.Property(t => t.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+        });
+
+        modelBuilder.Entity<TenantUser>(e =>
+        {
+            e.ToTable("tenant_users");
+            e.HasKey(user => user.Id);
+            e.Property(user => user.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(user => user.TenantId).HasColumnName("tenant_id").IsRequired();
+            e.Property(user => user.Email).HasColumnName("email").HasMaxLength(320).IsRequired();
+            e.Property(user => user.NormalizedEmail).HasColumnName("normalized_email").HasMaxLength(320).IsRequired();
+            e.Property(user => user.PasswordHash).HasColumnName("password_hash").IsRequired();
+            e.Property(user => user.Role).HasColumnName("role").HasMaxLength(50).HasDefaultValue(TenantUserRoles.Owner);
+            e.Property(user => user.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(user => user.LastLoginAt).HasColumnName("last_login_at");
+            e.Property(user => user.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(user => user.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(user => user.NormalizedEmail).IsUnique();
+            e.HasIndex(user => user.TenantId);
+            e.HasOne(user => user.Tenant).WithMany(tenant => tenant.Users).HasForeignKey(user => user.TenantId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Agent>(e =>

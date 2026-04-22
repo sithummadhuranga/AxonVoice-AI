@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { IBM_Plex_Mono, Manrope } from 'next/font/google';
+import { logoutConsoleUser } from '@/lib/console-auth-actions';
+import { getConsoleSession } from '@/lib/console-session';
 import './globals.css';
 
 const manrope = Manrope({
@@ -21,6 +23,11 @@ const navigation = [
     description: 'Launch readiness and operating posture',
   },
   {
+    href: '/setup',
+    label: 'Setup',
+    description: 'Gemini access and onboarding progress',
+  },
+  {
     href: '/agents',
     label: 'Agents',
     description: 'Voice personas, language coverage, and session limits',
@@ -31,7 +38,6 @@ const secondarySections = [
   'Knowledge base',
   'Sessions',
   'Bookings',
-  'Settings',
 ];
 
 export const metadata: Metadata = {
@@ -39,12 +45,13 @@ export const metadata: Metadata = {
   description: 'Tenant administration for multilingual voice agents.',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.AXONVOICE_API_URL ?? null;
+  const session = await getConsoleSession();
 
   return (
     <html lang="en" className={`${manrope.variable} ${ibmPlexMono.variable}`}>
@@ -112,11 +119,34 @@ export default function RootLayout({
                     Operations
                   </p>
                   <p className="mt-2 text-sm text-muted">
-                    Dashboard reads live configuration data when the API route is reachable and authenticated.
+                    {session
+                      ? `Authenticated for ${session.tenantName}. Dashboard requests stay server-side and tenant-scoped.`
+                      : 'Sign in to reach tenant-scoped gateway routes from the dashboard server.'}
                   </p>
                 </div>
-                <div className="rounded-full border border-line bg-white/70 px-4 py-2 text-sm text-foreground shadow-[0_10px_30px_rgba(49,34,21,0.08)]">
-                  Multi-tenant voice platform
+                <div className="flex items-center gap-3">
+                  {session ? (
+                    <>
+                      <div className="rounded-full border border-line bg-white/70 px-4 py-2 text-sm text-foreground shadow-[0_10px_30px_rgba(49,34,21,0.08)]">
+                        {session.email}
+                      </div>
+                      <form action={logoutConsoleUser}>
+                        <button
+                          type="submit"
+                          className="rounded-full border border-line bg-sidebar px-4 py-2 text-sm text-sidebar-foreground transition hover:bg-black"
+                        >
+                          Sign out
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <Link
+                      href="/login"
+                      className="rounded-full border border-line bg-white/70 px-4 py-2 text-sm text-foreground shadow-[0_10px_30px_rgba(49,34,21,0.08)] transition hover:bg-white"
+                    >
+                      Sign in
+                    </Link>
+                  )}
                 </div>
               </div>
             </header>

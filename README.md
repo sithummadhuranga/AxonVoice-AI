@@ -57,6 +57,8 @@ open http://localhost:8080
 
 The gateway is the only public entrypoint in Docker. The dashboard is proxied at `/`, the API stays under `/api/*`, the relay WebSocket is exposed at `/ws/session`, and the embeddable widget assets are served at `/widget/*`.
 
+On a fresh environment, the dashboard opens at the tenant sign-in flow first. Create the tenant owner account there, then continue with the Gemini API key, agent, business-hours, and knowledge-base onboarding steps.
+
 The backend containers now persist ASP.NET Core DataProtection keys in a shared Docker volume and require a password-protected PFX to encrypt those keys at rest. For local Docker runs, generate a self-signed development certificate or use an internal PKI-issued certificate, export it as a password-protected PFX, and base64-encode the file contents into `DATA_PROTECTION_CERTIFICATE_BASE64`.
 
 If you want Ollama containerized instead of using the host installation, run the base compose file without `infra/docker-compose.dev.yml`.
@@ -109,9 +111,7 @@ This platform does **not** pay for AI on behalf of tenants. Each tenant supplies
 ## Documentation
 
 - [Architecture & Engineering Specification](ARCHITECTURE.md)
-- [Self-Hosting Guide](docs/SELF_HOSTING.md)
-- [API Reference](docs/API_REFERENCE.md)
-- [Widget Integration Guide](docs/WIDGET_INTEGRATION.md)
+- [Contribution Guide](CONTRIBUTING.md)
 
 ## Repository Structure
 

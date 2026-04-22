@@ -16,4 +16,5 @@ public class Tenant
     public DateTimeOffset UpdatedAt { get; set; }
 
     public ICollection<Agent> Agents { get; set; } = [];
+    public ICollection<TenantUser> Users { get; set; } = [];
 }

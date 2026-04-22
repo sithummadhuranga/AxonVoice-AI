@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using AxonVoiceAI.Shared.Configuration;
+using AxonVoiceAI.Shared.Security;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
 using System.Text;
@@ -43,7 +44,20 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(PlatformAuthorizationPolicyNames.ConsoleAccess, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(PlatformTokenClaims.TokenUse, PlatformTokenUses.Console);
+    });
+
+    options.AddPolicy(PlatformAuthorizationPolicyNames.SessionAccess, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(PlatformTokenClaims.TokenUse, PlatformTokenUses.Session);
+    });
+});
 
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
@@ -57,7 +71,14 @@ app.UseAuthorization();
 // Rate limiting check before proxying — reads counters set by AgentConfig.
 app.Use(async (context, next) =>
 {
-    var tenantIdClaim = context.User.FindFirst("tenant_id")?.Value;
+    var tokenUse = context.User.FindFirst(PlatformTokenClaims.TokenUse)?.Value;
+    if (!string.Equals(tokenUse, PlatformTokenUses.Session, StringComparison.Ordinal))
+    {
+        await next(context);
+        return;
+    }
+
+    var tenantIdClaim = context.User.FindFirst(PlatformTokenClaims.TenantId)?.Value;
     if (tenantIdClaim is not null)
     {
         var redis = context.RequestServices.GetRequiredService<IConnectionMultiplexer>();

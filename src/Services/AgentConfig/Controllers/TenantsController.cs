@@ -1,6 +1,7 @@
 using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Entities;
 using AxonVoiceAI.AgentConfig.Services;
+using AxonVoiceAI.Shared.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,7 @@ namespace AxonVoiceAI.AgentConfig.Controllers;
 
 [ApiController]
 [Route("tenants")]
+[Authorize(Policy = PlatformAuthorizationPolicyNames.ConsoleAccess)]
 public sealed class TenantsController : ControllerBase
 {
     private readonly AgentConfigDbContext _db;
@@ -25,8 +27,15 @@ public sealed class TenantsController : ControllerBase
         CreateTenantRequest request,
         CancellationToken ct)
     {
-        var encrypted = _encryption.Encrypt(request.GeminiApiKey);
-        var hint = ApiKeyEncryptionService.ExtractHint(request.GeminiApiKey);
+        var apiKeyError = ValidateGeminiApiKey(request.GeminiApiKey);
+        if (apiKeyError is not null)
+        {
+            return BadRequest(new { error = apiKeyError });
+        }
+
+        var geminiApiKey = request.GeminiApiKey.Trim();
+        var encrypted = _encryption.Encrypt(geminiApiKey);
+        var hint = ApiKeyEncryptionService.ExtractHint(geminiApiKey);
 
         var tenant = new Tenant
         {
@@ -72,17 +81,45 @@ public sealed class TenantsController : ControllerBase
 
         if (tenant is null) return NotFound();
 
-        tenant.ApiKeyEncrypted = _encryption.Encrypt(request.GeminiApiKey);
-        tenant.ApiKeyHint = ApiKeyEncryptionService.ExtractHint(request.GeminiApiKey);
+        var apiKeyError = ValidateGeminiApiKey(request.GeminiApiKey);
+        if (apiKeyError is not null)
+        {
+            return BadRequest(new { error = apiKeyError });
+        }
+
+        var geminiApiKey = request.GeminiApiKey.Trim();
+        tenant.ApiKeyEncrypted = _encryption.Encrypt(geminiApiKey);
+        tenant.ApiKeyHint = ApiKeyEncryptionService.ExtractHint(geminiApiKey);
         tenant.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
 
+    private static string? ValidateGeminiApiKey(string geminiApiKey)
+    {
+        var trimmedApiKey = geminiApiKey.Trim();
+        if (trimmedApiKey.Length == 0)
+        {
+            return "Gemini API key is required.";
+        }
+
+        if (trimmedApiKey.Length > 512)
+        {
+            return "Gemini API key must be 512 characters or fewer.";
+        }
+
+        if (trimmedApiKey.Any(char.IsWhiteSpace))
+        {
+            return "Gemini API key must not contain spaces or line breaks.";
+        }
+
+        return null;
+    }
+
     private Guid ResolveTenantId()
     {
-        var claim = User.FindFirst("tenant_id")?.Value;
+        var claim = User.FindFirst(PlatformTokenClaims.TenantId)?.Value;
         return claim is not null && Guid.TryParse(claim, out var id) ? id : Guid.Empty;
     }
 }

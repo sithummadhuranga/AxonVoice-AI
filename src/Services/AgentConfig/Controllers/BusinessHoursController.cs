@@ -1,5 +1,7 @@
 using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Entities;
+using AxonVoiceAI.Shared.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +9,7 @@ namespace AxonVoiceAI.AgentConfig.Controllers;
 
 [ApiController]
 [Route("agents/{agentId:guid}/business-hours")]
+[Authorize(Policy = PlatformAuthorizationPolicyNames.ConsoleAccess)]
 public sealed class BusinessHoursController : ControllerBase
 {
     private readonly AgentConfigDbContext _db;
@@ -131,7 +134,7 @@ public sealed class BusinessHoursController : ControllerBase
 
     private Guid ResolveTenantId()
     {
-        var claim = User.FindFirst("tenant_id")?.Value;
+        var claim = User.FindFirst(PlatformTokenClaims.TenantId)?.Value;
         return claim is not null && Guid.TryParse(claim, out var id) ? id : Guid.Empty;
     }
 }
