@@ -17,7 +17,7 @@ const primaryNav: NavItem[] = [
   {
     href: '/dashboard',
     label: 'Command Center',
-    note: 'Readiness, activity, and rollout posture',
+    note: 'Rollout posture & readiness',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
@@ -30,7 +30,7 @@ const primaryNav: NavItem[] = [
   {
     href: '/agents',
     label: 'Agents',
-    note: 'Voice contracts, languages, and runtime policy',
+    note: 'Voice contracts & languages',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/>
@@ -42,7 +42,7 @@ const primaryNav: NavItem[] = [
   {
     href: '/setup',
     label: 'Infrastructure',
-    note: 'Secrets, API access, and production readiness',
+    note: 'Keys & deployment readiness',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <path d="M9 2a7 7 0 1 0 0 14A7 7 0 0 0 9 2Z" stroke="currentColor" strokeWidth="1.5"/>
@@ -57,7 +57,7 @@ const secondaryNav: NavItem[] = [
   {
     href: '#',
     label: 'Knowledge Base',
-    note: 'Document ingestion and retrieval verification',
+    note: 'Document ingestion & retrieval',
     disabled: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -70,7 +70,7 @@ const secondaryNav: NavItem[] = [
   {
     href: '#',
     label: 'Sessions',
-    note: 'Live traffic, transcripts, and intervention view',
+    note: 'Live traffic & transcripts',
     disabled: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -81,7 +81,7 @@ const secondaryNav: NavItem[] = [
   {
     href: '#',
     label: 'Bookings',
-    note: 'Pending holds, approvals, and expirations',
+    note: 'Holds, approvals & expirations',
     disabled: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -105,6 +105,14 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileOpen]);
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
@@ -168,8 +176,8 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
   };
 
   const sidebar = (
-    <aside className="surface-dark flex h-full flex-col overflow-hidden rounded-[2rem] px-4 py-4 text-sidebar-foreground">
-      <div className="px-2">
+    <aside className="surface-dark flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] px-4 py-4 text-sidebar-foreground">
+      <div className="shrink-0 px-2">
         <div className="flex items-center justify-between gap-3 rounded-[1.4rem] border border-white/8 bg-white/[0.03] px-4 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent shadow-[0_18px_32px_rgba(20,115,230,0.30)]">
@@ -193,17 +201,10 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
             {tenantName}
           </p>
           <p className="mt-1 truncate text-sm text-sidebar-muted">{email}</p>
-          <div className="mt-4 flex items-center gap-2 rounded-[1rem] bg-black/20 px-3 py-2 text-xs text-sidebar-muted">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <rect x="2.5" y="6" width="9" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M4.5 6V4.75a2.5 2.5 0 0 1 5 0V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
-            Protected by a server-side operator session
-          </div>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-5" aria-label="Primary navigation">
+      <nav className="scrollbar-panel scrollbar-panel-dark flex-1 min-h-0 overflow-y-auto px-2 py-5 pr-2" aria-label="Primary navigation">
         <div>
           <p className="px-3 text-[0.65rem] font-medium uppercase tracking-[0.16em] text-sidebar-muted/72">
             Workspace
@@ -227,7 +228,7 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
         </div>
       </nav>
 
-      <div className="border-t border-white/8 px-2 pt-4">
+      <div className="shrink-0 border-t border-white/8 px-2 pt-4">
         <form action={logoutConsoleUser}>
           <button
             type="submit"
@@ -250,11 +251,11 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
 
   return (
     <>
-      <div className="hidden lg:fixed lg:inset-y-4 lg:left-4 lg:z-30 lg:flex lg:w-[17.5rem] lg:flex-col">
+      <div className="hidden lg:fixed lg:inset-y-4 lg:left-4 lg:z-30 lg:flex lg:w-[19rem] lg:flex-col xl:w-[20rem] 2xl:left-5 2xl:inset-y-5 2xl:w-[21rem]">
         {sidebar}
       </div>
 
-      <header className="fixed inset-x-3 top-3 z-30 flex items-center justify-between rounded-[1.4rem] border border-line bg-[rgba(255,255,255,0.82)] px-4 py-3 shadow-[var(--shadow-md)] backdrop-blur-xl lg:hidden">
+      <header className="fixed inset-x-3 top-3 z-30 flex items-center justify-between rounded-[1.4rem] border border-line bg-[rgba(255,255,255,0.82)] px-4 py-3 shadow-[var(--shadow-md)] backdrop-blur-xl sm:inset-x-4 sm:top-4 lg:hidden">
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-accent shadow-[0_14px_24px_rgba(20,115,230,0.24)]">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -285,7 +286,7 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <div className="absolute inset-y-3 left-3 w-[min(85vw,21rem)] shadow-2xl">
+          <div className="absolute inset-y-3 left-3 w-[min(88vw,23rem)] max-w-[23rem] shadow-2xl sm:left-4 sm:top-4 sm:bottom-4">
             {sidebar}
           </div>
         </div>

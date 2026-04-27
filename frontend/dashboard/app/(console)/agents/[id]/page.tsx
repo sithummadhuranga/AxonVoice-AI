@@ -37,14 +37,6 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
 
   return (
     <div className="grid gap-6">
-      <div className="flex items-center gap-3 text-sm text-muted">
-        <Link href="/agents" className="group flex items-center gap-1.5 text-sm transition">
-          <span className="text-muted transition group-hover:text-foreground">Agents</span>
-        </Link>
-        <span className="text-muted/40">/</span>
-        <span className="text-sm text-foreground">{agent.displayName}</span>
-      </div>
-
       <section className="surface-card-strong relative overflow-hidden p-6 lg:p-8">
         <div
           aria-hidden="true"

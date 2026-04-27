@@ -233,3 +233,40 @@ textarea {
   border-color: rgba(20, 115, 230, 0.18);
   background: rgba(255, 255, 255, 0.92);
 }
+
+.scrollbar-panel {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(15, 26, 40, 0.18)) transparent;
+}
+
+.scrollbar-panel::-webkit-scrollbar {
+  width: 0.65rem;
+  height: 0.65rem;
+}
+
+.scrollbar-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-panel::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background: var(--scrollbar-thumb, rgba(15, 26, 40, 0.18));
+  background-clip: padding-box;
+}
+
+.scrollbar-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(15, 26, 40, 0.28));
+  background-clip: padding-box;
+}
+
+.scrollbar-panel-dark {
+  --scrollbar-thumb: rgba(161, 180, 196, 0.34);
+  --scrollbar-thumb-hover: rgba(242, 248, 253, 0.42);
+}
+
+.scrollbar-panel-light {
+  --scrollbar-thumb: rgba(15, 26, 40, 0.14);
+  --scrollbar-thumb-hover: rgba(15, 26, 40, 0.24);
+}

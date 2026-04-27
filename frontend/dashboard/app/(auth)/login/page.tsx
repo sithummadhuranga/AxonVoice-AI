@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { loginConsoleUser, registerConsoleOwner } from '@/lib/console-auth-actions';
 import { getConsoleSession } from '@/lib/console-session';
+import { AuthPasswordField } from '@/components/auth-password-field';
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -20,15 +21,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const registerSelected = mode === 'register';
 
   return (
-    <div className="grid gap-6">
+    <div className="grid h-full gap-4 sm:gap-5">
       <div>
         <p className="eyebrow text-accent">Operator Access</p>
-        <h2 className="mt-4 text-[2rem] font-semibold tracking-[-0.06em] text-foreground sm:text-[2.35rem]">
-          {registerSelected ? 'Create a tenant workspace' : 'Welcome back'}
+        <h2 className="mt-3 text-[1.8rem] font-semibold leading-[0.98] tracking-[-0.06em] text-foreground sm:text-[2.1rem]">
+          {registerSelected ? 'Create workspace' : 'Welcome back'}
         </h2>
-        <p className="mt-3 text-sm leading-7 text-muted">
+        <p className="mt-2 text-sm leading-6 text-muted">
           {registerSelected
-            ? 'Create the owner account, store credentials securely, and bring the first voice agent online.'
+            ? 'Create the owner account, secure credentials, and bring the first voice agent online.'
             : 'Sign in to manage agent rollout, tenant secrets, and live voice operations.'}
         </p>
       </div>
@@ -36,7 +37,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <div className="grid grid-cols-2 rounded-[1.35rem] border border-line bg-white/72 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
         <Link
           href="/login"
-          className={`group inline-flex items-center justify-center rounded-[1rem] px-4 py-3 text-sm font-semibold transition ${
+          className={`group inline-flex items-center justify-center rounded-[1rem] px-4 py-2.5 text-sm font-semibold transition ${
             !registerSelected
               ? 'bg-foreground shadow-[0_16px_24px_rgba(15,26,40,0.16)]'
               : 'hover:bg-black/[0.02]'
@@ -48,7 +49,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </Link>
         <Link
           href="/login?mode=register"
-          className={`group inline-flex items-center justify-center rounded-[1rem] px-4 py-3 text-sm font-semibold transition ${
+          className={`group inline-flex items-center justify-center rounded-[1rem] px-4 py-2.5 text-sm font-semibold transition ${
             registerSelected
               ? 'bg-foreground shadow-[0_16px_24px_rgba(15,26,40,0.16)]'
               : 'hover:bg-black/[0.02]'
@@ -74,7 +75,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       ) : null}
 
       {registerSelected ? (
-        <form action={registerConsoleOwner} className="grid gap-4">
+        <form action={registerConsoleOwner} className="grid gap-3">
           <AuthField
             autoComplete="organization"
             icon={<OfficeIcon />}
@@ -83,17 +84,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             type="text"
           />
           <AuthField autoComplete="email" icon={<MailIcon />} label="Owner email" name="email" type="email" />
-          <AuthField
+          <AuthPasswordField
             autoComplete="new-password"
-            hint="Use at least 12 characters with uppercase, lowercase, and numeric characters."
-            icon={<LockIcon />}
+            hint="12+ characters, mixed case and numerics."
             label="Password"
             name="password"
-            type="password"
           />
           <button
             type="submit"
-            className="primary-button mt-2 w-full"
+            className="primary-button mt-1 w-full"
           >
             Create workspace
           </button>
@@ -105,12 +104,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </p>
         </form>
       ) : (
-        <form action={loginConsoleUser} className="grid gap-4">
+        <form action={loginConsoleUser} className="grid gap-3">
           <AuthField autoComplete="email" icon={<MailIcon />} label="Email" name="email" type="email" />
-          <AuthField autoComplete="current-password" icon={<LockIcon />} label="Password" name="password" type="password" />
+          <AuthPasswordField autoComplete="current-password" label="Password" name="password" />
           <button
             type="submit"
-            className="primary-button mt-2 w-full"
+            className="primary-button mt-1 w-full"
           >
             Sign in
           </button>
@@ -123,9 +122,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </form>
       )}
 
-      <div className="rounded-[1.25rem] border border-line bg-white/64 px-4 py-3.5 text-sm leading-6 text-muted">
-        Tokens stay in an HttpOnly cookie and tenant API calls continue from the server. Browser JavaScript never gets direct bearer-token access.
-      </div>
+      {!registerSelected ? (
+        <div className="rounded-[1.25rem] border border-line bg-white/64 px-4 py-3 text-xs leading-5 text-muted">
+          Tokens stay in an HttpOnly cookie. Browser JavaScript never receives direct bearer-token access.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -156,14 +157,14 @@ function AuthField({
         </span>
         <input
           autoComplete={autoComplete}
-          className="h-12 w-full rounded-[1rem] border border-line-strong bg-white/86 pl-11 pr-4 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] outline-none transition placeholder:text-muted/60 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+          className="h-11 w-full rounded-[1rem] border border-line-strong bg-white/86 pl-11 pr-4 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] outline-none transition placeholder:text-muted/60 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
           id={name}
           name={name}
           required
           type={type}
         />
       </div>
-      {hint ? <p className="text-xs leading-5 text-muted">{hint}</p> : null}
+      {hint ? <p className="text-[0.72rem] leading-4 text-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -173,15 +174,6 @@ function MailIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.4"/>
       <path d="M3.5 5L8 8.5L12.5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="3" y="7" width="10" height="6" rx="2" stroke="currentColor" strokeWidth="1.4"/>
-      <path d="M5.5 7V5.75a2.5 2.5 0 1 1 5 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
     </svg>
   );
 }

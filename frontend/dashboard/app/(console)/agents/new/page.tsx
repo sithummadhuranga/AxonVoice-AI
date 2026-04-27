@@ -10,20 +10,6 @@ export default async function NewAgentPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex items-center gap-3 text-sm text-muted">
-        <Link
-          href="/agents"
-          className="flex items-center gap-1.5 text-sm text-muted transition hover:text-foreground"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          Agents
-        </Link>
-        <span className="text-muted/40">/</span>
-        <span className="text-sm text-foreground">New agent</span>
-      </div>
-
       <section className="surface-card-strong relative overflow-hidden p-6 lg:p-8">
         <div
           aria-hidden="true"

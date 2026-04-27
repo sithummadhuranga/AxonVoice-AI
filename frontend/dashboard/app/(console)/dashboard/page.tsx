@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentTenant, getDashboardOverview, hasGeminiApiKeyConfigured } from '@/lib/api';
 import { requireConsoleSession } from '@/lib/console-session';
@@ -16,10 +15,7 @@ function languageLabel(code: string): string {
 export default async function DashboardPage() {
   await requireConsoleSession();
   const tenant = await getCurrentTenant();
-
-  if (!hasGeminiApiKeyConfigured(tenant)) {
-    redirect('/setup');
-  }
+  const needsSetup = !hasGeminiApiKeyConfigured(tenant);
 
   const overview = await getDashboardOverview();
   const activeShare =
@@ -29,6 +25,26 @@ export default async function DashboardPage() {
 
   return (
     <div className="grid gap-6">
+      {needsSetup ? (
+        <div className="flex items-start gap-4 rounded-[1.5rem] border border-amber-200/80 bg-amber-50/90 px-5 py-4 shadow-[var(--shadow-sm)]">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M9 2L16 15H2L9 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+              <path d="M9 7v4M9 12.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold tracking-[-0.02em] text-amber-900">Gemini API key required before going live</p>
+            <p className="mt-1 text-sm leading-6 text-amber-700">
+              Store your tenant&apos;s Gemini credential to enable voice session routing. Agents can be created now and activated after setup.
+            </p>
+          </div>
+          <Link href="/setup" className="shrink-0 rounded-[0.9rem] bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700">
+            Set up now
+          </Link>
+        </div>
+      ) : null}
+
       <section className="surface-card-strong relative overflow-hidden p-6 lg:p-8">
         <div
           aria-hidden="true"
