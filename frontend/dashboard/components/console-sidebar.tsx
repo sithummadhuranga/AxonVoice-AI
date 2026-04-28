@@ -55,10 +55,9 @@ const primaryNav: NavItem[] = [
 
 const secondaryNav: NavItem[] = [
   {
-    href: '#',
+    href: '/knowledge-base',
     label: 'Knowledge Base',
     note: 'Document ingestion & retrieval',
-    disabled: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <path d="M3 4a1 1 0 0 1 1-1h4v12H4a1 1 0 0 1-1-1V4Z" stroke="currentColor" strokeWidth="1.5"/>
@@ -68,10 +67,9 @@ const secondaryNav: NavItem[] = [
     ),
   },
   {
-    href: '#',
+    href: '/sessions',
     label: 'Sessions',
     note: 'Live traffic & transcripts',
-    disabled: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <path d="M2 13l3.5-4L8 11.5 11 7l2.5 3L16 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -79,10 +77,9 @@ const secondaryNav: NavItem[] = [
     ),
   },
   {
-    href: '#',
+    href: '/bookings',
     label: 'Bookings',
     note: 'Holds, approvals & expirations',
-    disabled: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <rect x="2" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/>
@@ -101,10 +98,6 @@ type ConsoleSidebarProps = {
 export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? 'hidden' : '';
@@ -169,7 +162,12 @@ export function ConsoleSidebar({ tenantName, email }: ConsoleSidebarProps) {
     }
 
     return (
-      <Link aria-current={active ? 'page' : undefined} href={item.href} className={className}>
+      <Link
+        aria-current={active ? 'page' : undefined}
+        href={item.href}
+        className={className}
+        onClick={() => setMobileOpen(false)}
+      >
         {content}
       </Link>
     );

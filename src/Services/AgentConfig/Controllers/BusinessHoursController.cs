@@ -113,7 +113,7 @@ public sealed class BusinessHoursController : ControllerBase
         _db.ClosedDates.Add(closedDate);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetClosedDatesAsync), new { agentId },
+        return Created($"/agents/{agentId:D}/business-hours/closed-dates/{closedDate.Id:D}",
             new ClosedDateResponse(closedDate.Id, closedDate.Date, closedDate.Reason));
     }
 

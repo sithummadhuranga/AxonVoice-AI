@@ -1,6 +1,7 @@
 ﻿import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AgentEditorForm } from '@/components/agent-editor-form';
+import { MutationBanner } from '@/components/mutation-banner';
 import { getAgent } from '@/lib/api';
 import { updateAgentAction } from '@/lib/agent-actions';
 import {
@@ -14,13 +15,18 @@ import { requireConsoleSession } from '@/lib/console-session';
 
 interface AgentDetailPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ created?: string; message?: string; updated?: string }>;
 }
 
-export default async function AgentDetailPage({ params }: AgentDetailPageProps) {
+export default async function AgentDetailPage({ params, searchParams }: AgentDetailPageProps) {
   await requireConsoleSession();
-  const { id } = await params;
+  const [{ id }, { created, message, updated }] = await Promise.all([params, searchParams]);
   const agent = await getAgent(id);
   if (!agent) { notFound(); }
+
+  const successMessage = message
+    ?? (created === '1' ? 'Agent created and ready for new live sessions.' : null)
+    ?? (updated === '1' ? 'Agent settings saved.' : null);
 
   const formValues = {
     name: agent.name,
@@ -37,6 +43,8 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
 
   return (
     <div className="grid gap-6">
+      {successMessage ? <MutationBanner tone="success">{successMessage}</MutationBanner> : null}
+
       <section className="surface-card-strong relative overflow-hidden p-6 lg:p-8">
         <div
           aria-hidden="true"
@@ -61,10 +69,24 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
               <Chip>{agent.geminiModel}</Chip>
             </div>
           </div>
-          <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${agent.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-black/[0.05] text-muted'}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${agent.isActive ? 'bg-emerald-500' : 'bg-muted/40'}`} />
-            {agent.isActive ? 'Active' : 'Paused'}
-          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${agent.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-black/[0.05] text-muted'}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${agent.isActive ? 'bg-emerald-500' : 'bg-muted/40'}`} />
+              {agent.isActive ? 'Active' : 'Paused'}
+            </span>
+            <Link
+              href={`/agents/${agent.id}/test`}
+              className="flex items-center gap-2 rounded-full border border-line bg-white/84 px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-foreground transition-colors hover:border-accent hover:text-accent"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.4"/>
+                <path d="M4.5 4.1a.5.5 0 0 1 .77-.42l3 2a.5.5 0 0 1 0 .84l-3 2A.5.5 0 0 1 4.5 8V4.1Z" fill="currentColor"/>
+              </svg>
+              Test agent
+            </Link>
+          </div>
         </div>
       </section>
 

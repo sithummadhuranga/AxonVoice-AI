@@ -90,10 +90,10 @@ export class SessionConnection {
 
   private _openWebSocket(wsUrl: string, token: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const socketUrl = new URL(wsUrl);
-      socketUrl.searchParams.set('token', token);
+      const socketUrl = new URL(normalizeSessionRelayUrl(wsUrl));
+      socketUrl.searchParams.set('token', normalizeSessionToken(token));
 
-      const socket = new WebSocket(socketUrl);
+      const socket = new WebSocket(socketUrl.toString());
       socket.binaryType = 'arraybuffer';
 
       const timeout = setTimeout(() => {
@@ -124,4 +124,42 @@ export class SessionConnection {
       });
     });
   }
+}
+
+function normalizeSessionRelayUrl(wsUrl: string): string {
+  return wsUrl.trim();
+}
+
+function normalizeSessionToken(token: string): string {
+  const normalizedToken = trimJwtBoundaryNoise(token);
+  const parts = normalizedToken.split('.');
+
+  if (parts.length !== 3 || parts.some((part) => part.length === 0 || !isJwtSegment(part))) {
+    throw new Error('Token response returned an invalid session token.');
+  }
+
+  return normalizedToken;
+}
+
+function trimJwtBoundaryNoise(value: string): string {
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && !isJwtBoundaryCharacter(value[start]!)) {
+    start += 1;
+  }
+
+  while (end > start && !isJwtBoundaryCharacter(value[end - 1]!)) {
+    end -= 1;
+  }
+
+  return value.slice(start, end);
+}
+
+function isJwtBoundaryCharacter(character: string): boolean {
+  return /^[A-Za-z0-9._-]$/.test(character);
+}
+
+function isJwtSegment(segment: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(segment);
 }

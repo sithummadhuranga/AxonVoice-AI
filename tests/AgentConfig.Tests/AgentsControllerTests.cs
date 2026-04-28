@@ -74,6 +74,47 @@ public sealed class AgentsControllerTests
     }
 
     [Fact]
+    public async Task CreateAgentAsync_ValidRequest_PersistsAgentAndReturnsCreatedResponse()
+    {
+        var tenantId = Guid.NewGuid();
+
+        await using var db = CreateDbContext();
+        db.Tenants.Add(CreateTenant(tenantId));
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db, tenantId);
+
+        var result = await controller.CreateAgentAsync(
+            new CreateAgentRequest(
+                Name: "mathara-bath-kade",
+                DisplayName: "Mathara Bath Kade",
+                PersonaPrompt: "Greets callers warmly and captures booking details with short follow-up questions.",
+                PrimaryLanguage: "si",
+                SupportedLanguages: ["si", "ta", "en"],
+                VoiceName: "Aoede",
+                ToolsEnabled: ["check_availability", "create_pending_booking"],
+                SessionTimeoutSeconds: 600,
+                SilenceTimeoutSeconds: 90,
+                IsActive: true),
+            CancellationToken.None);
+
+        var created = result.Should().BeOfType<CreatedResult>().Subject;
+        created.Location.Should().StartWith("/agents/");
+
+        var payload = created.Value.Should().BeOfType<AgentDetailResponse>().Subject;
+        payload.DisplayName.Should().Be("Mathara Bath Kade");
+        payload.PrimaryLanguage.Should().Be("si");
+        payload.ToolsEnabled.Should().Equal("check_availability", "create_pending_booking");
+
+        var savedAgent = await db.Agents.SingleAsync();
+        savedAgent.Name.Should().Be("mathara-bath-kade");
+        savedAgent.DisplayName.Should().Be("Mathara Bath Kade");
+        savedAgent.GeminiModel.Should().Be("gemini-2.5-flash-native-audio-preview-12-2025");
+        created.Location.Should().Be($"/agents/{savedAgent.Id:D}");
+        payload.Id.Should().Be(savedAgent.Id);
+    }
+
+    [Fact]
     public async Task UpdateAgentAsync_ValidMutation_UpdatesEditableFields()
     {
         var tenantId = Guid.NewGuid();

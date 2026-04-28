@@ -45,7 +45,7 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
                     supported_languages = table.Column<string[]>(type: "text[]", nullable: false),
                     primary_language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false, defaultValue: "si"),
                     voice_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, defaultValue: "Aoede"),
-                    gemini_model = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, defaultValue: "gemini-2.0-flash-live-001"),
+                    gemini_model = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, defaultValue: "gemini-2.5-flash-native-audio-preview-12-2025"),
                     session_timeout_sec = table.Column<int>(type: "integer", nullable: false, defaultValue: 600),
                     silence_timeout_sec = table.Column<int>(type: "integer", nullable: false, defaultValue: 90),
                     tools_enabled = table.Column<string[]>(type: "text[]", nullable: false),

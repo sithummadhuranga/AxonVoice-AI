@@ -37,6 +37,7 @@ public sealed class FunctionCallInterceptorTests
             agentId.ToString(),
             sessionId.ToString(),
             NullLogger<FunctionCallInterceptor>.Instance);
+        var geminiClient = new RecordingGeminiLiveClient();
 
         var responses = await interceptor.HandleAsync(
             [new GeminiFunctionCall
@@ -45,7 +46,7 @@ public sealed class FunctionCallInterceptorTests
                 Name = "create_pending_booking",
                 Args = argsDocument.RootElement.Clone()
             }],
-            null!,
+            geminiClient,
             CancellationToken.None);
 
         responses.Should().ContainSingle();
@@ -54,6 +55,7 @@ public sealed class FunctionCallInterceptorTests
         responses[0].ResponseJson.Should().Contain("Ada Lovelace");
         responses[0].ResponseJson.Should().Contain("Window seat");
         responses[0].ResponseJson.Should().Contain("\"DetectedLanguage\":\"si\"");
+        geminiClient.LastInstruction.Should().Contain("හොඳයි, මමත් පරීක්ෂා කරලා බලන්නම්");
     }
 
     [Fact]
@@ -70,6 +72,7 @@ public sealed class FunctionCallInterceptorTests
             Guid.NewGuid().ToString(),
             Guid.NewGuid().ToString(),
             NullLogger<FunctionCallInterceptor>.Instance);
+        var geminiClient = new RecordingGeminiLiveClient();
 
         using var cancellationTokenSource = new CancellationTokenSource();
         await cancellationTokenSource.CancelAsync();
@@ -80,10 +83,57 @@ public sealed class FunctionCallInterceptorTests
                 Id = "call-2",
                 Name = "cancellable_function"
             }],
-            null!,
+            geminiClient,
             cancellationTokenSource.Token);
 
         responses.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HandleAsync_AcknowledgmentStartsBeforePluginCompletes()
+    {
+        var geminiClient = new RecordingGeminiLiveClient();
+        var kernelBuilder = Kernel.CreateBuilder();
+        kernelBuilder.Plugins.AddFromObject(new WaitForAcknowledgmentPlugin(geminiClient));
+        var kernel = kernelBuilder.Build();
+
+        var interceptor = new FunctionCallInterceptor(
+            kernel,
+            "en",
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            NullLogger<FunctionCallInterceptor>.Instance);
+
+        var responses = await interceptor.HandleAsync(
+            [new GeminiFunctionCall
+            {
+                Id = "call-3",
+                Name = "wait_for_ack"
+            }],
+            geminiClient,
+            CancellationToken.None);
+
+        responses.Should().ContainSingle();
+        responses[0].ResponseJson.Should().Contain("ack-observed");
+    }
+
+    [Fact]
+    public async Task SendAcknowledgmentAsync_UsesLocalizedInstruction()
+    {
+        var interceptor = new FunctionCallInterceptor(
+            Kernel.CreateBuilder().Build(),
+            "ta",
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            NullLogger<FunctionCallInterceptor>.Instance);
+        var geminiClient = new RecordingGeminiLiveClient();
+
+        await interceptor.SendAcknowledgmentAsync(geminiClient, CancellationToken.None);
+
+        geminiClient.LastInstruction.Should().Be(
+            "Speak this exact acknowledgment to the caller and add nothing else: \"சரி, நான் சரிபார்க்கிறேன்\"");
     }
 
     private sealed class BookingEchoPlugin
@@ -121,6 +171,36 @@ public sealed class FunctionCallInterceptorTests
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return Task.FromResult("should-not-complete");
+            }
+        }
+
+        private sealed class WaitForAcknowledgmentPlugin(RecordingGeminiLiveClient geminiClient)
+        {
+            [KernelFunction("wait_for_ack")]
+            public async Task<string> WaitForAckAsync(CancellationToken cancellationToken = default)
+            {
+                await geminiClient.WaitForAcknowledgmentAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                return "ack-observed";
+            }
+        }
+
+        private sealed class RecordingGeminiLiveClient : IGeminiLiveClient
+        {
+            private readonly TaskCompletionSource _acknowledgmentObserved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public string? LastInstruction { get; private set; }
+
+            public Task SendClientContentTextTurnAsync(string text, CancellationToken ct)
+            {
+                ct.ThrowIfCancellationRequested();
+                LastInstruction = text;
+                _acknowledgmentObserved.TrySetResult();
+                return Task.CompletedTask;
+            }
+
+            public Task WaitForAcknowledgmentAsync(TimeSpan timeout, CancellationToken ct)
+            {
+                return _acknowledgmentObserved.Task.WaitAsync(timeout, ct);
             }
         }
 

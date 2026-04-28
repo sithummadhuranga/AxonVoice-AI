@@ -15,7 +15,7 @@ public sealed class SystemPromptAssemblerTests
         var sessionConfig = SystemPromptAssembler.BuildSessionConfig(agentConfig, []);
         var toolSchemaJson = JsonSerializer.Serialize(sessionConfig.Setup.Tools);
 
-        sessionConfig.Setup.Model.Should().Be("models/gemini-2.0-flash-live-001");
+        sessionConfig.Setup.Model.Should().Be("models/gemini-2.5-flash-native-audio-preview-12-2025");
         sessionConfig.Setup.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName.Should().Be("Puck");
         toolSchemaJson.Should().Contain("partySize");
         toolSchemaJson.Should().Contain("customerName");
@@ -58,7 +58,7 @@ public sealed class SystemPromptAssemblerTests
             Language: "si",
             SupportedLanguages: ["si", "ta", "en"],
             VoiceName: "Puck",
-            GeminiModel: "gemini-2.0-flash-live-001",
+            GeminiModel: "gemini-2.5-flash-native-audio-preview-12-2025",
             GeminiApiKey: "secret",
             BookingEnabled: true,
             SessionTimeoutSeconds: 600,

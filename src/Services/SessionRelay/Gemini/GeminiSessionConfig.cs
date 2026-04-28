@@ -15,12 +15,12 @@ public sealed record GeminiSessionConfig
 public sealed record GeminiSetup
 {
     [JsonPropertyName("model")]
-    public string Model { get; init; } = "models/gemini-2.0-flash-live";
+    public string Model { get; init; } = "models/gemini-2.5-flash-native-audio-preview-12-2025";
 
-    [JsonPropertyName("generation_config")]
+    [JsonPropertyName("generationConfig")]
     public GeminiGenerationConfig GenerationConfig { get; init; } = new();
 
-    [JsonPropertyName("system_instruction")]
+    [JsonPropertyName("systemInstruction")]
     public GeminiSystemInstruction SystemInstruction { get; init; } = null!;
 
     [JsonPropertyName("tools")]
@@ -29,28 +29,28 @@ public sealed record GeminiSetup
 
 public sealed record GeminiGenerationConfig
 {
-    [JsonPropertyName("response_modalities")]
+    [JsonPropertyName("responseModalities")]
     public string[] ResponseModalities { get; init; } = ["AUDIO"];
 
-    [JsonPropertyName("speech_config")]
+    [JsonPropertyName("speechConfig")]
     public GeminiSpeechConfig SpeechConfig { get; init; } = new();
 }
 
 public sealed record GeminiSpeechConfig
 {
-    [JsonPropertyName("voice_config")]
+    [JsonPropertyName("voiceConfig")]
     public GeminiVoiceConfig VoiceConfig { get; init; } = new();
 }
 
 public sealed record GeminiVoiceConfig
 {
-    [JsonPropertyName("prebuilt_voice_config")]
+    [JsonPropertyName("prebuiltVoiceConfig")]
     public GeminiPrebuiltVoice PrebuiltVoiceConfig { get; init; } = new();
 }
 
 public sealed record GeminiPrebuiltVoice
 {
-    [JsonPropertyName("voice_name")]
+    [JsonPropertyName("voiceName")]
     public string VoiceName { get; init; } = "Aoede";
 }
 
@@ -68,7 +68,7 @@ public sealed record GeminiTextPart
 
 public sealed record GeminiToolDeclaration
 {
-    [JsonPropertyName("function_declarations")]
+    [JsonPropertyName("functionDeclarations")]
     public IReadOnlyList<GeminiFunctionDeclaration> FunctionDeclarations { get; init; } = [];
 }
 

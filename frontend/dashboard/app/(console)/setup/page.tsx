@@ -1,3 +1,5 @@
+import { ActionSubmitButton } from '@/components/action-submit-button';
+import { MutationBanner } from '@/components/mutation-banner';
 import Link from 'next/link';
 import { getCurrentTenant, getErrorMessage, hasGeminiApiKeyConfigured } from '@/lib/api';
 import { requireConsoleSession } from '@/lib/console-session';
@@ -6,12 +8,13 @@ import { updateTenantGeminiApiKey } from '@/lib/tenant-actions';
 type SetupPageProps = {
   searchParams: Promise<{
     error?: string;
+    message?: string;
   }>;
 };
 
 export default async function SetupPage({ searchParams }: SetupPageProps) {
   const session = await requireConsoleSession();
-  const { error } = await searchParams;
+  const { error, message } = await searchParams;
 
   let tenant: Awaited<ReturnType<typeof getCurrentTenant>> | null = null;
   let loadError: string | null = null;
@@ -57,25 +60,9 @@ export default async function SetupPage({ searchParams }: SetupPageProps) {
         </div>
       </section>
 
-      {error ? (
-        <div className="flex items-start gap-3 rounded-[1.35rem] border border-red-200/80 bg-red-50/90 px-4 py-3.5 text-sm text-red-700">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mt-0.5 shrink-0" aria-hidden="true">
-            <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M8 5v3.5M8 10.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          {error}
-        </div>
-      ) : null}
-
-      {loadError ? (
-        <div className="flex items-start gap-3 rounded-[1.35rem] border border-amber-200/80 bg-amber-50/90 px-4 py-3.5 text-sm text-amber-700">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mt-0.5 shrink-0" aria-hidden="true">
-            <path d="M8 1.5L14.5 13H1.5L8 1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-            <path d="M8 6v3.5M8 11v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          {loadError}
-        </div>
-      ) : null}
+      {message ? <MutationBanner tone="success">{message}</MutationBanner> : null}
+      {error ? <MutationBanner tone="error">{error}</MutationBanner> : null}
+      {loadError ? <MutationBanner tone="warning">{loadError}</MutationBanner> : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <section className="surface-card-strong p-6 lg:p-7">
@@ -126,12 +113,11 @@ export default async function SetupPage({ searchParams }: SetupPageProps) {
                   type="password"
                 />
               </label>
-              <button
-                type="submit"
-                className="primary-button w-full"
-              >
-                {apiKeyConfigured ? 'Rotate API key' : 'Save API key'}
-              </button>
+              <ActionSubmitButton
+                className="primary-button w-full disabled:cursor-wait disabled:opacity-80"
+                idleLabel={apiKeyConfigured ? 'Rotate API key' : 'Save API key'}
+                pendingLabel={apiKeyConfigured ? 'Saving key...' : 'Saving key...'}
+              />
             </form>
           ) : (
             <div className="mt-5 rounded-[1.25rem] border border-dashed border-line px-4 py-5 text-sm text-muted">

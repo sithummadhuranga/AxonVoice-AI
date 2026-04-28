@@ -1,4 +1,5 @@
 using AxonVoiceAI.SessionRelay.Audio;
+using AxonVoiceAI.SessionRelay.ConversationStore;
 using AxonVoiceAI.SessionRelay.Gemini;
 using AxonVoiceAI.SessionRelay.Handlers;
 using AxonVoiceAI.SessionRelay.Prompts;
@@ -7,6 +8,7 @@ using AxonVoiceAI.Shared.DTOs;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.Http.Json;
 
 namespace AxonVoiceAI.SessionRelay.Handlers;
@@ -21,15 +23,18 @@ public sealed class SessionHandler
     private readonly ILogger<SessionHandler> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly KernelPluginCollection _plugins;
+    private readonly ConversationStoreSessionWriter _sessionWriter;
 
     public SessionHandler(
         IHttpClientFactory httpClientFactory,
         KernelPluginCollection plugins,
+        ConversationStoreSessionWriter sessionWriter,
         ILogger<SessionHandler> logger,
         ILoggerFactory loggerFactory)
     {
         _httpClientFactory = httpClientFactory;
         _plugins = plugins;
+        _sessionWriter = sessionWriter;
         _logger = logger;
         _loggerFactory = loggerFactory;
     }
@@ -56,8 +61,12 @@ public sealed class SessionHandler
 
         var agentConfig = await agentConfigTask;
         var knowledgeChunks = await knowledgeTask;
+        var sessionLanguage = string.IsNullOrWhiteSpace(context.Language)
+            ? agentConfig.Language
+            : context.Language;
 
         var sessionConfig = SystemPromptAssembler.BuildSessionConfig(agentConfig, knowledgeChunks);
+        var sessionStopwatch = Stopwatch.StartNew();
 
         var geminiClient = new GeminiLiveClient(
             _loggerFactory.CreateLogger<GeminiLiveClient>(),
@@ -66,10 +75,11 @@ public sealed class SessionHandler
         await using (geminiClient)
         {
             await geminiClient.ConnectAsync(agentConfig.GeminiApiKey, sessionConfig, ct);
+            await _sessionWriter.RecordSessionStartAsync(context, channel.Type, sessionLanguage, ct);
 
             var interceptor = new FunctionCallInterceptor(
                 BuildKernel(),
-                agentConfig.Language,
+                sessionLanguage,
                 context.TenantId.ToString(),
                 context.AgentId.ToString(),
                 context.SessionId.ToString(),
@@ -78,7 +88,7 @@ public sealed class SessionHandler
             // Run inbound (caller → Gemini) and outbound (Gemini → caller) loops concurrently.
             using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var inboundTask = ForwardInboundAudioAsync(channel, geminiClient, loopCts.Token);
-            var outboundTask = ForwardOutboundAudioAsync(geminiClient, channel, interceptor, loopCts.Token);
+            var outboundTask = ForwardOutboundAudioAsync(context, geminiClient, channel, interceptor, loopCts.Token);
 
             try
             {
@@ -90,6 +100,12 @@ public sealed class SessionHandler
                 await Task.WhenAll(inboundTask, outboundTask).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
+
+        sessionStopwatch.Stop();
+        await _sessionWriter.CloseSessionAsync(
+            context,
+            sessionStopwatch.Elapsed.TotalSeconds >= int.MaxValue ? int.MaxValue : (int)sessionStopwatch.Elapsed.TotalSeconds,
+            ct);
 
         _logger.LogInformation("Session ended.");
     }
@@ -106,6 +122,7 @@ public sealed class SessionHandler
     }
 
     private async Task ForwardOutboundAudioAsync(
+        SessionStartContextDto context,
         GeminiLiveClient geminiClient,
         IRealtimeAudioChannel channel,
         FunctionCallInterceptor interceptor,
@@ -122,7 +139,7 @@ public sealed class SessionHandler
 
                 if (message.ToolCall is { FunctionCalls.Count: > 0 })
                 {
-                    pendingToolTasks.Add(HandleToolCallsAsync(geminiClient, interceptor, message.ToolCall.FunctionCalls, pendingToolCalls, ct));
+                    pendingToolTasks.Add(HandleToolCallsAsync(context, geminiClient, interceptor, message.ToolCall.FunctionCalls, pendingToolCalls, ct));
                     continue;
                 }
 
@@ -160,6 +177,7 @@ public sealed class SessionHandler
     }
 
     private async Task HandleToolCallsAsync(
+        SessionStartContextDto context,
         GeminiLiveClient geminiClient,
         FunctionCallInterceptor interceptor,
         IReadOnlyList<GeminiFunctionCall> functionCalls,
@@ -173,25 +191,31 @@ public sealed class SessionHandler
         try
         {
             var acknowledgmentTask = TrySendAcknowledgmentAsync(interceptor, geminiClient, ct);
-            var responseTasks = batchCalls
-                .Select(pendingToolCall => interceptor.HandleSingleAsync(pendingToolCall.FunctionCall, pendingToolCall.CancellationTokenSource.Token))
+            var executionTasks = batchCalls
+                .Select(pendingToolCall => interceptor.HandleSingleWithTelemetryAsync(pendingToolCall.FunctionCall, pendingToolCall.CancellationTokenSource.Token))
                 .ToArray();
 
-            await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+            await Task.WhenAll(executionTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
 
-            var responses = batchCalls
+            var completedExecutions = batchCalls
                 .Select((pendingToolCall, index) => new
                 {
                     PendingToolCall = pendingToolCall,
-                    Response = responseTasks[index].Result,
+                    Execution = executionTasks[index].Result,
                 })
-                .Where(static item => !item.PendingToolCall.CancellationTokenSource.IsCancellationRequested && item.Response is not null)
-                .Select(static item => item.Response!)
+                .Where(static item => !item.PendingToolCall.CancellationTokenSource.IsCancellationRequested && item.Execution is not null)
+                .Select(static item => item.Execution!)
+                .ToArray();
+
+            var responses = completedExecutions
+                .Select(static execution => execution.Response)
                 .ToArray();
 
             if (responses.Length > 0)
             {
-                await geminiClient.SendToolResponsesAsync(responses, ct);
+                await Task.WhenAll(
+                    geminiClient.SendToolResponsesAsync(responses, ct),
+                    _sessionWriter.RecordFunctionCallsAsync(context, completedExecutions, ct));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

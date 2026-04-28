@@ -36,6 +36,11 @@ public sealed class QdrantVectorStore
         IReadOnlyList<KnowledgeChunkPoint> chunks,
         CancellationToken ct)
     {
+        if (chunks.Count == 0)
+        {
+            return;
+        }
+
         var points = chunks.Select(c => new PointStruct
         {
             Id = new PointId { Uuid = c.PointId.ToString() },

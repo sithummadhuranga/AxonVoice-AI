@@ -113,7 +113,7 @@ public static class SystemPromptAssembler
     private static string NormalizeModelName(string geminiModel)
     {
         if (string.IsNullOrWhiteSpace(geminiModel))
-            return "models/gemini-2.0-flash-live-001";
+            return "models/gemini-2.5-flash-native-audio-preview-12-2025";
 
         return geminiModel.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
             ? geminiModel

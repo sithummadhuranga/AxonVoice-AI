@@ -47,7 +47,7 @@ export async function createAgentAction(
 
   revalidatePath('/agents');
   revalidatePath('/dashboard');
-  redirect(`/agents/${result.agentId}?created=1`);
+  redirect(`/agents/${result.agentId}?message=${encodeURIComponent('Agent created and ready for new live sessions.')}`);
 }
 
 export async function updateAgentAction(
@@ -75,7 +75,7 @@ export async function updateAgentAction(
   revalidatePath('/agents');
   revalidatePath(`/agents/${agentId}`);
   revalidatePath('/dashboard');
-  redirect(`/agents/${agentId}?updated=1`);
+  redirect(`/agents/${agentId}?message=${encodeURIComponent('Agent settings saved.')}`);
 }
 
 async function submitCreateAgent(

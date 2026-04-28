@@ -45,6 +45,111 @@ export interface DashboardOverview {
   languages: string[];
 }
 
+export interface SessionSummary {
+  id: string;
+  agentId: string;
+  language: string;
+  status: string;
+  startedAt: string;
+  durationSeconds: number | null;
+}
+
+export interface SessionFunctionCall {
+  id: string;
+  sessionId: string;
+  tenantId: string;
+  functionName: string;
+  argumentsJson: string | null;
+  resultJson: string | null;
+  succeeded: boolean;
+  errorMessage: string | null;
+  calledAt: string;
+  durationMs: number;
+}
+
+export interface SessionDetail {
+  id: string;
+  agentId: string;
+  tenantId: string;
+  callerIdentifier: string;
+  language: string;
+  status: string;
+  summary: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number | null;
+  functionCalls: SessionFunctionCall[];
+}
+
+export interface SessionListResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  sessions: SessionSummary[];
+}
+
+export interface PendingBookingSummary {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  customerLanguage: string;
+  partySize: number;
+  requestedDatetime: string;
+  specialRequests: string | null;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+  confirmationCode: string;
+}
+
+export interface ConfirmedBookingSummary {
+  id: string;
+  promotedFromPendingId: string | null;
+  customerName: string;
+  customerPhone: string;
+  customerLanguage: string;
+  partySize: number;
+  bookingDatetime: string;
+  specialRequests: string | null;
+  status: string;
+  internalNotes: string | null;
+  confirmedAt: string;
+  confirmedBy: string | null;
+  updatedAt: string;
+  confirmationCode: string;
+}
+
+export interface AgentBookings {
+  pendingBookings: PendingBookingSummary[];
+  confirmedBookings: ConfirmedBookingSummary[];
+}
+
+export interface BusinessHoursEntry {
+  id: string;
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  slotDurationMinutes: number;
+  maxCapacityPerSlot: number;
+  isActive: boolean;
+}
+
+export interface ClosedDateEntry {
+  id: string;
+  date: string;
+  reason: string | null;
+}
+
+export type KnowledgeDocumentStatus = 'uploading' | 'processing' | 'ready' | 'error';
+
+export interface KnowledgeDocumentSummary {
+  id: string;
+  filename: string;
+  status: KnowledgeDocumentStatus;
+  chunkCount: number | null;
+  uploadedAt: string;
+}
+
 class ApiClientError extends Error {
   readonly status?: number;
 
@@ -104,6 +209,64 @@ export async function getCurrentTenant(): Promise<TenantDetail> {
   }
 
   return tenant;
+}
+
+export async function getSession(id: string): Promise<SessionDetail | null> {
+  return requestJson<SessionDetail>(`/api/conversations/sessions/${id}`, { allowNotFound: true });
+}
+
+export async function getSessions(options?: {
+  agentId?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<SessionListResult> {
+  const params = new URLSearchParams();
+
+  if (options?.agentId) {
+    params.set('agentId', options.agentId);
+  }
+
+  if (typeof options?.page === 'number') {
+    params.set('page', String(options.page));
+  }
+
+  if (typeof options?.pageSize === 'number') {
+    params.set('pageSize', String(options.pageSize));
+  }
+
+  const query = params.size > 0 ? `?${params.toString()}` : '';
+  const result = await requestJson<SessionListResult>(`/api/conversations/sessions${query}`);
+
+  if (!result) {
+    throw new ApiClientError('The sessions API did not return a payload.');
+  }
+
+  return result;
+}
+
+export async function getAgentBookings(agentId: string): Promise<AgentBookings> {
+  const result = await requestJson<AgentBookings>(`/api/config/agents/${agentId}/bookings`);
+
+  if (!result) {
+    throw new ApiClientError('The bookings API did not return a payload.');
+  }
+
+  return result;
+}
+
+export async function getBusinessHours(agentId: string): Promise<BusinessHoursEntry[]> {
+  const result = await requestJson<BusinessHoursEntry[]>(`/api/config/agents/${agentId}/business-hours`);
+  return result ?? [];
+}
+
+export async function getClosedDates(agentId: string): Promise<ClosedDateEntry[]> {
+  const result = await requestJson<ClosedDateEntry[]>(`/api/config/agents/${agentId}/business-hours/closed-dates`);
+  return result ?? [];
+}
+
+export async function getKnowledgeDocuments(agentId: string): Promise<KnowledgeDocumentSummary[]> {
+  const result = await requestJson<KnowledgeDocumentSummary[]>(`/api/knowledge/agents/${agentId}/documents`);
+  return result ?? [];
 }
 
 export function hasGeminiApiKeyConfigured(tenant: Pick<TenantDetail, 'apiKeyHint'>): boolean {

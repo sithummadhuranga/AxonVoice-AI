@@ -51,7 +51,7 @@ public sealed class TenantsController : ControllerBase
         _db.Tenants.Add(tenant);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetTenantAsync), new { id = tenant.Id }, new TenantResponse(
+        return Created($"/tenants/{tenant.Id:D}", new TenantResponse(
             tenant.Id, tenant.Name, tenant.ApiKeyHint, tenant.DefaultLanguage,
             tenant.RateLimitDaily, tenant.RateLimitConcurrent, tenant.IsActive));
     }

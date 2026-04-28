@@ -21,6 +21,31 @@ internal static class GeminiLiveRequestFactory
         };
     }
 
+    public static GeminiClientMessage CreateClientContentTextTurn(string text)
+    {
+        return new GeminiClientMessage
+        {
+            ClientContent = new GeminiClientContent
+            {
+                Turns =
+                [
+                    new GeminiConversationTurn
+                    {
+                        Role = "user",
+                        Parts =
+                        [
+                            new GeminiConversationPart
+                            {
+                                Text = text,
+                            }
+                        ],
+                    }
+                ],
+                TurnComplete = true,
+            }
+        };
+    }
+
     public static GeminiClientMessage CreateToolResponse(IReadOnlyList<GeminiFunctionResponse> responses)
     {
         return new GeminiClientMessage

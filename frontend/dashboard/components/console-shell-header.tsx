@@ -113,6 +113,37 @@ function getRouteMeta(pathname: string): RouteMeta {
     };
   }
 
+  if (pathname.startsWith('/sessions/') && pathname !== '/sessions') {
+    return {
+      breadcrumbs: [
+        { label: 'Sessions', href: '/sessions' },
+        { label: 'Inspection' },
+      ],
+      label: 'Session inspection',
+    };
+  }
+
+  if (pathname === '/sessions') {
+    return {
+      breadcrumbs: [{ label: 'Sessions' }],
+      label: 'Session traffic',
+    };
+  }
+
+  if (pathname === '/bookings') {
+    return {
+      breadcrumbs: [{ label: 'Bookings' }],
+      label: 'Booking operations',
+    };
+  }
+
+  if (pathname === '/knowledge-base') {
+    return {
+      breadcrumbs: [{ label: 'Knowledge Base' }],
+      label: 'Knowledge operations',
+    };
+  }
+
   return {
     breadcrumbs: [{ label: 'Command center' }],
     label: 'Operator overview',

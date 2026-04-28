@@ -21,7 +21,7 @@ export async function updateTenantGeminiApiKey(formData: FormData): Promise<void
 
   revalidatePath('/dashboard');
   revalidatePath('/setup');
-  redirect('/dashboard');
+  redirect('/setup?message=' + encodeURIComponent('Gemini API key saved. New live sessions can use it immediately.'));
 }
 
 async function submitTenantApiKeyUpdate(

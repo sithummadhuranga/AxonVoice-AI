@@ -76,6 +76,22 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
 }
 
+app.UseExceptionHandler(pipeline =>
+{
+    pipeline.Run(async context =>
+    {
+        var exceptionFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ExceptionHandler");
+        logger.LogError(exceptionFeature?.Error, "Unhandled exception on {Method} {Path}",
+            context.Request.Method, context.Request.Path);
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new { error = "An internal error occurred." });
+    });
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

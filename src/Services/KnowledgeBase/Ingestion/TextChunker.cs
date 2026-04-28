@@ -34,9 +34,11 @@ public static class TextChunker
             if (chunk.Length >= MinimumChunkLength)
                 chunks.Add(chunk);
 
+            if (end >= normalized.Length)
+                break;
+
             // Advance by target minus overlap to create sliding window.
-            position = end - OverlapLength;
-            if (position <= 0) position = end;
+            position = Math.Max(end - OverlapLength, position + 1);
         }
 
         return chunks.AsReadOnly();

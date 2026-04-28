@@ -3,6 +3,7 @@ using AxonVoiceAI.Shared;
 using AxonVoiceAI.Shared.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -45,7 +46,7 @@ public sealed class FunctionCallInterceptor
     /// </summary>
     public async Task<IReadOnlyList<GeminiFunctionResponse>> HandleAsync(
         IReadOnlyList<GeminiFunctionCall> functionCalls,
-        GeminiLiveClient geminiClient,
+        IGeminiLiveClient geminiClient,
         CancellationToken ct)
     {
         var acknowledgmentTask = SendAcknowledgmentAsync(geminiClient, ct);
@@ -53,7 +54,14 @@ public sealed class FunctionCallInterceptor
             .Select(functionCall => HandleSingleAsync(functionCall, ct))
             .ToArray();
 
-        await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+        try
+        {
+            await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return [];
+        }
 
         return responseTasks
             .Select(task => task.Result)
@@ -62,21 +70,55 @@ public sealed class FunctionCallInterceptor
             .ToArray();
     }
 
-    internal async Task SendAcknowledgmentAsync(GeminiLiveClient geminiClient, CancellationToken ct)
+    internal async Task SendAcknowledgmentAsync(IGeminiLiveClient geminiClient, CancellationToken ct)
     {
         var phrase = AcknowledgmentPhrases.ForLanguage(_language);
-        // Send the acknowledgment as a text turn so Gemini speaks it immediately.
-        // The exact mechanism depends on the Gemini Live API's client-content endpoint.
-        // This is a placeholder that will be wired when exact API response format is confirmed.
-        _logger.LogDebug(
-            "Acknowledgment phrase queued: '{Phrase}'. SessionId={SessionId}",
-            phrase, _sessionId);
+        var instruction = BuildAcknowledgmentInstruction(phrase);
 
-        await Task.CompletedTask;
+        await geminiClient.SendClientContentTextTurnAsync(instruction, ct);
+
+        _logger.LogDebug(
+            "Acknowledgment phrase sent to Gemini. Phrase='{Phrase}'. SessionId={SessionId}",
+            phrase,
+            _sessionId);
     }
 
-    internal Task<GeminiFunctionResponse?> HandleSingleAsync(GeminiFunctionCall functionCall, CancellationToken ct)
-        => InvokeSinglePluginAsync(functionCall, ct);
+    internal async Task<GeminiFunctionResponse?> HandleSingleAsync(GeminiFunctionCall functionCall, CancellationToken ct)
+    {
+        var executionResult = await HandleSingleWithTelemetryAsync(functionCall, ct);
+        return executionResult?.Response;
+    }
+
+    internal async Task<FunctionCallExecutionResult?> HandleSingleWithTelemetryAsync(
+        GeminiFunctionCall functionCall,
+        CancellationToken ct)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var argumentsJson = functionCall.Args?.GetRawText();
+
+        try
+        {
+            var response = await InvokeSinglePluginAsync(functionCall, ct);
+            if (response is null)
+                return null;
+
+            stopwatch.Stop();
+
+            return new FunctionCallExecutionResult(
+                functionCall.Name,
+                argumentsJson,
+                response.ResponseJson,
+                !ContainsErrorPayload(response.ResponseJson),
+                ExtractErrorMessage(response.ResponseJson),
+                stopwatch.ElapsedMilliseconds is > int.MaxValue ? int.MaxValue : (int)stopwatch.ElapsedMilliseconds,
+                response);
+        }
+        catch
+        {
+            stopwatch.Stop();
+            throw;
+        }
+    }
 
     private async Task<GeminiFunctionResponse?> InvokeSinglePluginAsync(
         GeminiFunctionCall call,
@@ -174,6 +216,55 @@ public sealed class FunctionCallInterceptor
         if (arguments.TryGetValue(sourceName, out var value))
             arguments[targetName] = value;
     }
+
+    private static bool ContainsErrorPayload(string responseJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string? ExtractErrorMessage(string responseJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (!document.RootElement.TryGetProperty("error", out var errorElement))
+                return null;
+
+            return errorElement.ValueKind == JsonValueKind.String
+                ? errorElement.GetString()
+                : errorElement.GetRawText();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string BuildAcknowledgmentInstruction(string phrase)
+    {
+        return $"Speak this exact acknowledgment to the caller and add nothing else: \"{phrase}\"";
+    }
 }
 
 public record GeminiFunctionResponse(string CallId, string FunctionName, string ResponseJson);
+
+public sealed record FunctionCallExecutionResult(
+    string FunctionName,
+    string? ArgumentsJson,
+    string ResultJson,
+    bool Succeeded,
+    string? ErrorMessage,
+    int DurationMs,
+    GeminiFunctionResponse Response);

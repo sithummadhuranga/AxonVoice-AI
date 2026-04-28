@@ -99,7 +99,7 @@ public sealed class AgentsController : ControllerBase
         _db.Agents.Add(agent);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetAgentAsync), new { id = agent.Id }, MapToResponse(agent));
+        return Created($"/agents/{agent.Id:D}", MapToResponse(agent));
     }
 
     [HttpPut("{id:guid}")]

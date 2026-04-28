@@ -10,6 +10,40 @@ interface FrameConfig {
   sessionTimeoutSeconds: number;
 }
 
+// Pcm16Player must be declared before the module-level initialisation below.
+// Class declarations are NOT hoisted in the Vite IIFE bundle — placing this after
+// the init block causes `new Pcm16Player()` inside bootstrapFrame to receive
+// `undefined` (the hoisted-but-uninitialised var binding), producing
+// "TypeError: h is not a constructor".
+class Pcm16Player {
+  private _context: AudioContext | null = null;
+
+  play(buffer: ArrayBuffer): void {
+    if (!this._context) {
+      this._context = new AudioContext({ sampleRate: 16_000 });
+    }
+
+    const input = new Int16Array(buffer);
+    const output = new Float32Array(input.length);
+    for (let index = 0; index < input.length; index += 1) {
+      output[index] = input[index] / 0x7fff;
+    }
+
+    const audioBuffer = this._context.createBuffer(1, output.length, 16_000);
+    audioBuffer.copyToChannel(output, 0);
+
+    const source = this._context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(this._context.destination);
+    source.start();
+  }
+
+  close(): void {
+    this._context?.close();
+    this._context = null;
+  }
+}
+
 const config = readFrameConfig();
 
 if (!config) {
@@ -539,33 +573,4 @@ function toErrorMessage(error: unknown): string {
   }
 
   return 'Unable to start the session.';
-}
-
-class Pcm16Player {
-  private _context: AudioContext | null = null;
-
-  play(buffer: ArrayBuffer): void {
-    if (!this._context) {
-      this._context = new AudioContext({ sampleRate: 16_000 });
-    }
-
-    const input = new Int16Array(buffer);
-    const output = new Float32Array(input.length);
-    for (let index = 0; index < input.length; index += 1) {
-      output[index] = input[index] / 0x7fff;
-    }
-
-    const audioBuffer = this._context.createBuffer(1, output.length, 16_000);
-    audioBuffer.copyToChannel(output, 0);
-
-    const source = this._context.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(this._context.destination);
-    source.start();
-  }
-
-  close(): void {
-    this._context?.close();
-    this._context = null;
-  }
 }
