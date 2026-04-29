@@ -104,7 +104,7 @@ export function AgentEditorForm({
             defaultValue={state.values.voiceName}
             label="Voice name"
             name="voiceName"
-            placeholder="Aoede"
+            placeholder="Sulafat"
           />
 
           <TextField

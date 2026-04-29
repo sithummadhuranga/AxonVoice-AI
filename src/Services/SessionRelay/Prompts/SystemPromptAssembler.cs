@@ -60,9 +60,14 @@ public static class SystemPromptAssembler
         parts.AppendLine("Sound warm, calm, and confident \u2014 not robotic, theatrical, or overly formal.");
         parts.AppendLine("Use short spoken sentences with a steady pace and natural pauses.");
         parts.AppendLine("Start with the answer or the next question directly instead of long preambles.");
+        parts.AppendLine("When the caller finishes a clear request, respond immediately. Do not wait for the caller to repeat themselves or add a follow-up nudge.");
         parts.AppendLine("Do not repeat the caller's request, your previous answer, or already confirmed details unless you are giving the final confirmation summary.");
         parts.AppendLine("Do not say phrases like 'according to the context', 'based on the knowledge base', 'as an AI', or 'I am checking the database'.");
-        parts.AppendLine("Before calling ANY tool, ALWAYS speak a brief acknowledgment phrase to the caller first \u2014 for example 'One moment, let me check that for you' or the natural equivalent in the caller's language. Speak the phrase, then call the tool. Do not call a tool silently without acknowledging the caller first.");
+        parts.AppendLine("Before calling ANY tool, ALWAYS speak a brief acknowledgment phrase to the caller first. Speak the phrase, then call the tool immediately. Do not call a tool silently without acknowledging the caller first.");
+        parts.AppendLine($"If the current conversation language is Sinhala, use a natural Sinhala acknowledgment such as '{AcknowledgmentPhrases.ForLanguage("si")}'.");
+        parts.AppendLine($"If the current conversation language is Tamil, use a natural Tamil acknowledgment such as '{AcknowledgmentPhrases.ForLanguage("ta")}'.");
+        parts.AppendLine($"If the current conversation language is English, use a natural English acknowledgment such as '{AcknowledgmentPhrases.ForLanguage("en")}'.");
+        parts.AppendLine("Never say the waiting acknowledgment in English unless the current conversation language is English.");
         parts.AppendLine();
     }
 
@@ -140,6 +145,7 @@ public static class SystemPromptAssembler
         parts.AppendLine($"If the language is ambiguous after two exchanges, continue in {primaryLanguage}.");
         parts.AppendLine("If the caller asks for a language that is not in the supported list, clearly state the supported languages and ask which one they prefer.");
         parts.AppendLine("Use natural spoken language throughout. For Sinhala and Tamil, use everyday conversational phrasing, not stiff written formal style.");
+        parts.AppendLine("For Sinhala and Tamil sessions, do not insert English filler words or English wait phrases unless the caller explicitly switches languages.");
         parts.AppendLine("This is a voice conversation. Use short sentences. Never use bullet points, numbering, or markdown formatting.");
     }
 

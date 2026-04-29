@@ -52,7 +52,7 @@ const defaultAgentFormValues: AgentFormValues = {
   personaPrompt: '',
   primaryLanguage: 'si',
   supportedLanguages: ['si', 'ta', 'en'],
-  voiceName: 'Aoede',
+  voiceName: 'Sulafat',
   sessionTimeoutSeconds: '600',
   silenceTimeoutSeconds: '90',
   toolsEnabled: ['check_availability', 'create_pending_booking'],

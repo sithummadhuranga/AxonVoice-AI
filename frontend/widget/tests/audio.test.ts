@@ -17,7 +17,7 @@ describe('calculateRootMeanSquare', () => {
 describe('evaluateVoiceActivity', () => {
   it('emits audio when speech energy crosses the threshold', () => {
     const decision = evaluateVoiceActivity(
-      { isSpeechActive: false, consecutiveSilentChunks: 0 },
+      { isSpeechActive: false, consecutiveSilentChunks: 0, noiseFloorRms: 0.0015 },
       new Float32Array([0.05, -0.05, 0.05, -0.05]),
     );
 
@@ -26,11 +26,35 @@ describe('evaluateVoiceActivity', () => {
     expect(decision.nextState.isSpeechActive).toBe(true);
   });
 
+  it('accepts quieter speech above the adaptive floor', () => {
+    const decision = evaluateVoiceActivity(
+      { isSpeechActive: false, consecutiveSilentChunks: 0, noiseFloorRms: 0.0015 },
+      new Float32Array([0.006, -0.006, 0.006, -0.006]),
+    );
+
+    expect(decision.shouldEmitAudio).toBe(true);
+    expect(decision.nextState.isSpeechActive).toBe(true);
+  });
+
+  it('tracks quiet background noise without falsely triggering speech', () => {
+    let state = { isSpeechActive: false, consecutiveSilentChunks: 0, noiseFloorRms: 0.0015 };
+
+    for (let index = 0; index < 8; index += 1) {
+      const decision = evaluateVoiceActivity(state, new Float32Array([0.002, -0.002, 0.002, -0.002]));
+      state = decision.nextState;
+      expect(decision.shouldEmitAudio).toBe(false);
+      expect(decision.shouldEmitSpeechEnd).toBe(false);
+    }
+
+    expect(state.isSpeechActive).toBe(false);
+    expect(state.noiseFloorRms).toBeGreaterThan(0.0015);
+  });
+
   it('flushes with speech end after sustained silence', () => {
-    let state = { isSpeechActive: true, consecutiveSilentChunks: 0 };
+    let state = { isSpeechActive: true, consecutiveSilentChunks: 0, noiseFloorRms: 0.0015 };
     let shouldEmitSpeechEnd = false;
 
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       const decision = evaluateVoiceActivity(state, new Float32Array([0.0005, -0.0005, 0.0005, -0.0005]));
       state = decision.nextState;
       shouldEmitSpeechEnd = decision.shouldEmitSpeechEnd;

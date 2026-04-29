@@ -118,7 +118,7 @@ public sealed record GeminiVoiceConfig
 public sealed record GeminiPrebuiltVoice
 {
     [JsonPropertyName("voiceName")]
-    public string VoiceName { get; init; } = "Aoede";
+    public string VoiceName { get; init; } = "Sulafat";
 }
 
 public sealed record GeminiSystemInstruction

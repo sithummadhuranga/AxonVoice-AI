@@ -19,12 +19,17 @@ const TARGET_SAMPLE_RATE = 16_000;
 // each chunk reached Gemini. 1 024 is a safe ScriptProcessorNode size that keeps the
 // onaudioprocess callback fast enough on all modern browsers.
 const BUFFER_SIZE = 1_024;
-const SPEECH_RMS_THRESHOLD = 0.008;
-const SILENCE_CHUNKS_BEFORE_STREAM_END = 6;
+const MIN_SPEECH_RMS_THRESHOLD = 0.0045;
+const MAX_SPEECH_RMS_THRESHOLD = 0.012;
+const INITIAL_NOISE_FLOOR_RMS = 0.0015;
+const NOISE_FLOOR_SMOOTHING_FACTOR = 0.15;
+const NOISE_TO_SPEECH_RATIO = 2.8;
+const SILENCE_CHUNKS_BEFORE_STREAM_END = 5;
 
 export interface VoiceActivityState {
   isSpeechActive: boolean;
   consecutiveSilentChunks: number;
+  noiseFloorRms: number;
 }
 
 export interface VoiceActivityDecision {
@@ -36,7 +41,33 @@ export interface VoiceActivityDecision {
 const INITIAL_VOICE_ACTIVITY_STATE: VoiceActivityState = {
   isSpeechActive: false,
   consecutiveSilentChunks: 0,
+  noiseFloorRms: INITIAL_NOISE_FLOOR_RMS,
 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function calculateSpeechThreshold(noiseFloorRms: number): number {
+  return clamp(
+    noiseFloorRms * NOISE_TO_SPEECH_RATIO,
+    MIN_SPEECH_RMS_THRESHOLD,
+    MAX_SPEECH_RMS_THRESHOLD,
+  );
+}
+
+function updateNoiseFloor(previousNoiseFloorRms: number, rootMeanSquare: number): number {
+  return previousNoiseFloorRms
+    + ((rootMeanSquare - previousNoiseFloorRms) * NOISE_FLOOR_SMOOTHING_FACTOR);
+}
+
+function createIdleVoiceActivityState(noiseFloorRms: number): VoiceActivityState {
+  return {
+    isSpeechActive: false,
+    consecutiveSilentChunks: 0,
+    noiseFloorRms,
+  };
+}
 
 export function calculateRootMeanSquare(input: Float32Array): number {
   if (input.length === 0) {
@@ -57,13 +88,18 @@ export function evaluateVoiceActivity(
   input: Float32Array,
 ): VoiceActivityDecision {
   const rootMeanSquare = calculateRootMeanSquare(input);
-  const hasSpeech = rootMeanSquare >= SPEECH_RMS_THRESHOLD;
+  const speechThreshold = calculateSpeechThreshold(previousState.noiseFloorRms);
+  const hasSpeech = rootMeanSquare >= speechThreshold;
+  const nextNoiseFloorRms = hasSpeech
+    ? previousState.noiseFloorRms
+    : updateNoiseFloor(previousState.noiseFloorRms, rootMeanSquare);
 
   if (hasSpeech) {
     return {
       nextState: {
         isSpeechActive: true,
         consecutiveSilentChunks: 0,
+        noiseFloorRms: previousState.noiseFloorRms,
       },
       shouldEmitAudio: true,
       shouldEmitSpeechEnd: false,
@@ -72,7 +108,7 @@ export function evaluateVoiceActivity(
 
   if (!previousState.isSpeechActive) {
     return {
-      nextState: INITIAL_VOICE_ACTIVITY_STATE,
+      nextState: createIdleVoiceActivityState(nextNoiseFloorRms),
       shouldEmitAudio: false,
       shouldEmitSpeechEnd: false,
     };
@@ -81,7 +117,7 @@ export function evaluateVoiceActivity(
   const consecutiveSilentChunks = previousState.consecutiveSilentChunks + 1;
   if (consecutiveSilentChunks >= SILENCE_CHUNKS_BEFORE_STREAM_END) {
     return {
-      nextState: INITIAL_VOICE_ACTIVITY_STATE,
+      nextState: createIdleVoiceActivityState(nextNoiseFloorRms),
       shouldEmitAudio: false,
       shouldEmitSpeechEnd: true,
     };
@@ -91,6 +127,7 @@ export function evaluateVoiceActivity(
     nextState: {
       isSpeechActive: true,
       consecutiveSilentChunks,
+      noiseFloorRms: nextNoiseFloorRms,
     },
     shouldEmitAudio: false,
     shouldEmitSpeechEnd: false,
@@ -112,6 +149,7 @@ export class BrowserAudioCapture implements AudioCaptureInterface {
       audio: {
         sampleRate: TARGET_SAMPLE_RATE,
         channelCount: 1,
+        autoGainControl: true,
         echoCancellation: true,
         noiseSuppression: true,
       },

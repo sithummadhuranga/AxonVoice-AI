@@ -49,9 +49,14 @@ public sealed class SystemPromptAssemblerTests
         prompt.Should().Contain("If the caller responds in a different supported language (Sinhala, Tamil, English)");
         prompt.Should().Contain("search_knowledge_base");
         prompt.Should().Contain("menu and price questions");
-        prompt.Should().Contain("Before calling ANY tool, ALWAYS speak a brief acknowledgment");
+        prompt.Should().Contain("Before calling ANY tool, ALWAYS speak a brief acknowledgment phrase to the caller first.");
+        prompt.Should().Contain("මොහොතක් ඉන්න, මම ඒක පරීක්ෂා කරලා කියන්නම්.");
+        prompt.Should().Contain("ஒரு நிமிடம், நான் சரிபார்த்து சொல்கிறேன்.");
+        prompt.Should().Contain("One moment, let me check that for you.");
+        prompt.Should().Contain("Never say the waiting acknowledgment in English unless the current conversation language is English.");
         prompt.Should().Contain("After a successful booking response, read out the confirmation code and stop.");
         prompt.Should().Contain("Use natural spoken language throughout. For Sinhala and Tamil");
+        prompt.Should().Contain("For Sinhala and Tamil sessions, do not insert English filler words or English wait phrases unless the caller explicitly switches languages.");
         prompt.Should().Contain("Call check_availability exactly once");
     }
 
