@@ -14,6 +14,7 @@ public class AgentConfigDbContext : DbContext
     public DbSet<ClosedDate> ClosedDates => Set<ClosedDate>();
     public DbSet<PendingBooking> PendingBookings => Set<PendingBooking>();
     public DbSet<ConfirmedBooking> ConfirmedBookings => Set<ConfirmedBooking>();
+    public DbSet<Order> Orders => Set<Order>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -151,6 +152,29 @@ public class AgentConfigDbContext : DbContext
             e.HasOne(c => c.PromotedFromPending).WithMany().HasForeignKey(c => c.PromotedFromPendingId);
             e.HasIndex(c => new { c.AgentId, c.BookingDatetime, c.Status })
              .HasDatabaseName("idx_confirmed_bookings_slot");
+        });
+
+        modelBuilder.Entity<Order>(e =>
+        {
+            e.ToTable("orders");
+            e.HasKey(o => o.Id);
+            e.Property(o => o.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(o => o.AgentId).HasColumnName("agent_id").IsRequired();
+            e.Property(o => o.TenantId).HasColumnName("tenant_id").IsRequired();
+            e.Property(o => o.SessionId).HasColumnName("session_id").IsRequired();
+            e.Property(o => o.CustomerName).HasColumnName("customer_name").HasMaxLength(255).IsRequired();
+            e.Property(o => o.CustomerPhone).HasColumnName("customer_phone").HasMaxLength(50).IsRequired();
+            e.Property(o => o.CustomerLanguage).HasColumnName("customer_language").HasMaxLength(10).IsRequired();
+            e.Property(o => o.ItemsJson).HasColumnName("items_json").HasColumnType("text").HasDefaultValue("[]").IsRequired();
+            e.Property(o => o.OrderType).HasColumnName("order_type").HasMaxLength(20).HasDefaultValue("pickup").IsRequired();
+            e.Property(o => o.DeliveryAddress).HasColumnName("delivery_address").HasColumnType("text");
+            e.Property(o => o.TotalAmount).HasColumnName("total_amount").HasColumnType("numeric(10,2)").IsRequired();
+            e.Property(o => o.ConfirmationCode).HasColumnName("confirmation_code").HasMaxLength(8).IsRequired();
+            e.Property(o => o.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue("received").IsRequired();
+            e.Property(o => o.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").IsRequired();
+            e.HasOne(o => o.Agent).WithMany().HasForeignKey(o => o.AgentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(o => new { o.AgentId, o.TenantId, o.CreatedAt })
+             .HasDatabaseName("idx_orders_agent_tenant_created");
         });
     }
 }

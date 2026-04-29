@@ -24,7 +24,10 @@ const MAX_SPEECH_RMS_THRESHOLD = 0.012;
 const INITIAL_NOISE_FLOOR_RMS = 0.0015;
 const NOISE_FLOOR_SMOOTHING_FACTOR = 0.15;
 const NOISE_TO_SPEECH_RATIO = 2.8;
-const SILENCE_CHUNKS_BEFORE_STREAM_END = 5;
+// 4 consecutive silent 64 ms chunks = 256 ms of silence before signalling end-of-turn.
+// Down from 5 (320 ms): saves one full audio buffer of latency while remaining above the
+// 200 ms Gemini server-side silence threshold, so the client signal still fires first.
+const SILENCE_CHUNKS_BEFORE_STREAM_END = 4;
 
 export interface VoiceActivityState {
   isSpeechActive: boolean;

@@ -14,7 +14,7 @@ import {
   type PendingBookingSummary,
 } from '@/lib/api';
 import { getLanguageLabel } from '@/lib/agent-form';
-import { confirmPendingBookingAction, expirePendingBookingAction } from '@/lib/booking-actions';
+import { confirmPendingBookingAction, expirePendingBookingAction, setBusinessHoursAction } from '@/lib/booking-actions';
 import { formatConsoleDate, formatConsoleDateTime, formatTimeRemaining, maskContactValue } from '@/lib/console-format';
 import { requireConsoleSession } from '@/lib/console-session';
 
@@ -169,6 +169,37 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
 
         <aside className="grid gap-4 self-start xl:sticky xl:top-4">
           <section className="surface-card p-5">
+            <p className="eyebrow text-muted">Schedule setup</p>
+            <h2 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-foreground">
+              Availability source of truth
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Reservation and appointment tools stay inactive until at least one active business-hours row is saved for this agent.
+            </p>
+
+            <form action={setBusinessHoursAction} className="mt-4 grid gap-3">
+              <input type="hidden" name="agentId" value={selectedAgent.id} />
+              {weekdayLabels.map((label, dayOfWeek) => {
+                const configuredSlot = businessHours.find((slot) => slot.dayOfWeek === dayOfWeek);
+                return (
+                  <ScheduleEditorRow
+                    key={label}
+                    dayLabel={label}
+                    dayOfWeek={dayOfWeek}
+                    slot={configuredSlot}
+                  />
+                );
+              })}
+
+              <ActionSubmitButton
+                className="primary-button h-12 disabled:cursor-wait disabled:opacity-80"
+                idleLabel="Save schedule"
+                pendingLabel="Saving schedule..."
+              />
+            </form>
+          </section>
+
+          <section className="surface-card p-5">
             <p className="eyebrow text-muted">Business hours</p>
             <div className="mt-4 grid gap-3">
               {businessHours.length === 0 ? (
@@ -178,7 +209,7 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
                   <InfoCard
                     key={slot.id}
                     label={weekdayLabels[slot.dayOfWeek] ?? `Day ${slot.dayOfWeek}`}
-                    value={`${slot.openTime} - ${slot.closeTime} · ${slot.maxCapacityPerSlot} seats`}
+                    value={`${formatTimeValue(slot.openTime)} - ${formatTimeValue(slot.closeTime)} · ${slot.slotDurationMinutes} min slots · capacity ${slot.maxCapacityPerSlot}`}
                   />
                 ))
               )}
@@ -376,4 +407,87 @@ function resolveSelectedAgent(agents: AgentSummary[], requestedAgentId: string |
 
 function buildBookingsUrl(agentId: string): string {
   return `/bookings?${new URLSearchParams({ agentId }).toString()}`;
+}
+
+function ScheduleEditorRow({
+  dayLabel,
+  dayOfWeek,
+  slot,
+}: {
+  dayLabel: string;
+  dayOfWeek: number;
+  slot: BusinessHoursEntry | undefined;
+}) {
+  return (
+    <div className="rounded-[1.15rem] border border-line bg-white/82 px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-foreground">{dayLabel}</p>
+        <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          <input
+            className="h-4 w-4 accent-[var(--color-accent)]"
+            defaultChecked={slot?.isActive ?? false}
+            name={`dayEnabled_${dayOfWeek}`}
+            type="checkbox"
+          />
+          Enabled
+        </label>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          Open
+          <input
+            className="h-11 rounded-[1rem] border border-line-strong bg-white/86 px-3 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+            defaultValue={toTimeInputValue(slot?.openTime, '09:00')}
+            name={`openTime_${dayOfWeek}`}
+            type="time"
+          />
+        </label>
+        <label className="grid gap-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          Close
+          <input
+            className="h-11 rounded-[1rem] border border-line-strong bg-white/86 px-3 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+            defaultValue={toTimeInputValue(slot?.closeTime, '17:00')}
+            name={`closeTime_${dayOfWeek}`}
+            type="time"
+          />
+        </label>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          Slot duration
+          <input
+            className="h-11 rounded-[1rem] border border-line-strong bg-white/86 px-3 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+            defaultValue={String(slot?.slotDurationMinutes ?? 60)}
+            min={1}
+            name={`slotDurationMinutes_${dayOfWeek}`}
+            type="number"
+          />
+        </label>
+        <label className="grid gap-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          Slot capacity
+          <input
+            className="h-11 rounded-[1rem] border border-line-strong bg-white/86 px-3 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+            defaultValue={String(slot?.maxCapacityPerSlot ?? 10)}
+            min={1}
+            name={`maxCapacityPerSlot_${dayOfWeek}`}
+            type="number"
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function toTimeInputValue(value: string | undefined, fallback: string): string {
+  if (!value || value.length < 5) {
+    return fallback;
+  }
+
+  return value.slice(0, 5);
+}
+
+function formatTimeValue(value: string): string {
+  return value.length >= 5 ? value.slice(0, 5) : value;
 }

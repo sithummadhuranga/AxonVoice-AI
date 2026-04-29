@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import { buildApiUrl } from '@/lib/api';
 import { requireConsoleSession } from '@/lib/console-session';
 
+const weekdayIndexes = [0, 1, 2, 3, 4, 5, 6] as const;
+
 export async function confirmPendingBookingAction(formData: FormData): Promise<void> {
   const session = await requireConsoleSession();
   const agentId = readRequiredValue(formData, 'agentId');
@@ -46,10 +48,40 @@ export async function expirePendingBookingAction(formData: FormData): Promise<vo
   redirect(buildBookingsUrl(agentId, 'message', 'Pending booking expired.'));
 }
 
+export async function setBusinessHoursAction(formData: FormData): Promise<void> {
+  const session = await requireConsoleSession();
+  const agentId = readRequiredValue(formData, 'agentId');
+  const scheduleResult = readBusinessHoursSchedule(formData);
+
+  if (!scheduleResult.ok) {
+    redirect(buildBookingsUrl(agentId, 'error', scheduleResult.error));
+  }
+
+  const error = await submitMutation({
+    accessToken: session.accessToken,
+    path: `/api/config/agents/${agentId}/business-hours`,
+    method: 'PUT',
+    body: JSON.stringify({ schedule: scheduleResult.value }),
+    contentType: 'application/json',
+  });
+
+  if (error) {
+    redirect(buildBookingsUrl(agentId, 'error', error));
+  }
+
+  revalidatePath('/bookings');
+
+  const message = scheduleResult.value.length === 0
+    ? 'Saved an empty schedule. Reservation and appointment tools stay inactive until at least one day is enabled.'
+    : 'Business hours saved. Availability checks can now use the updated weekly schedule.';
+
+  redirect(buildBookingsUrl(agentId, 'message', message));
+}
+
 async function submitMutation(options: {
   accessToken: string;
   path: string;
-  method: 'POST';
+  method: 'POST' | 'PUT';
   body?: BodyInit;
   contentType?: string;
 }): Promise<string | null> {
@@ -114,8 +146,73 @@ function readOptionalValue(formData: FormData, fieldName: string): string | null
   }
 
   const trimmedValue = value.trim();
+
   return trimmedValue.length > 0 ? trimmedValue : null;
 }
+
+function readBusinessHoursSchedule(
+  formData: FormData,
+): { ok: true; value: BusinessHoursSlotPayload[] } | { ok: false; error: string } {
+  const schedule: BusinessHoursSlotPayload[] = [];
+
+  for (const dayOfWeek of weekdayIndexes) {
+    if (formData.get(`dayEnabled_${dayOfWeek}`) !== 'on') {
+      continue;
+    }
+
+    const openTime = readRequiredValue(formData, `openTime_${dayOfWeek}`);
+    const closeTime = readRequiredValue(formData, `closeTime_${dayOfWeek}`);
+    const slotDuration = parsePositiveInteger(readRequiredValue(formData, `slotDurationMinutes_${dayOfWeek}`), 'Slot duration');
+    if (!slotDuration.ok) {
+      return slotDuration;
+    }
+
+    const capacity = parsePositiveInteger(readRequiredValue(formData, `maxCapacityPerSlot_${dayOfWeek}`), 'Slot capacity');
+    if (!capacity.ok) {
+      return capacity;
+    }
+
+    if (openTime >= closeTime) {
+      return { ok: false, error: `${weekdayLabels[dayOfWeek]} must close after it opens.` };
+    }
+
+    schedule.push({
+      dayOfWeek,
+      openTime: normalizeTimeValue(openTime),
+      closeTime: normalizeTimeValue(closeTime),
+      slotDurationMinutes: slotDuration.value,
+      maxCapacityPerSlot: capacity.value,
+    });
+  }
+
+  return { ok: true, value: schedule };
+}
+
+function parsePositiveInteger(
+  value: string,
+  fieldLabel: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return { ok: false, error: `${fieldLabel} must be greater than zero.` };
+  }
+
+  return { ok: true, value: parsed };
+}
+
+function normalizeTimeValue(value: string): string {
+  return value.length === 5 ? `${value}:00` : value;
+}
+
+type BusinessHoursSlotPayload = {
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  slotDurationMinutes: number;
+  maxCapacityPerSlot: number;
+};
+
+const weekdayLabels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function buildBookingsUrl(agentId: string, key: 'error' | 'message', value: string): string {
   const params = new URLSearchParams({ agentId, [key]: value });

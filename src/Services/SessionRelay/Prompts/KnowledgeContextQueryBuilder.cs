@@ -3,7 +3,7 @@ namespace AxonVoiceAI.SessionRelay.Prompts;
 public static class KnowledgeContextQueryBuilder
 {
     private const string BaseQuery =
-        "menu items food drinks prices reservations booking availability opening hours location services policies contact details";
+        "products services pricing menu items availability reservations appointments booking order pickup delivery opening hours location policies contact details treatments packages tickets seating durations";
 
     public static string BuildDefault(string? preferredLanguage)
     {

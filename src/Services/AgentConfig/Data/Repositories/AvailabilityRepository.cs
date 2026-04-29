@@ -53,8 +53,8 @@ public sealed class AvailabilityRepository : IAvailabilityRepository
                 AND expires_at > NOW()
             )
             SELECT
-              sc.max_capacity_per_slot - b.confirmed_total - h.pending_total AS remaining_capacity,
-              (sc.max_capacity_per_slot - b.confirmed_total - h.pending_total) >= {2} AS available
+                            CAST(sc.max_capacity_per_slot - b.confirmed_total - h.pending_total AS INTEGER) AS "RemainingCapacity",
+                            (sc.max_capacity_per_slot - b.confirmed_total - h.pending_total) >= {2} AS "Available"
             FROM slot_capacity sc
             CROSS JOIN booked b
             CROSS JOIN held h;

@@ -39,6 +39,7 @@ builder.Services.AddSingleton(_ => new ConsoleTokenService(jwtSigningKey, platfo
 builder.Services.AddSingleton(_ => new SessionTokenService(jwtSigningKey, platformBaseUrl));
 builder.Services.AddScoped<IAvailabilityRepository, AvailabilityRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 
 // ── Authentication ─────────────────────────────────────────────────────────────
 builder.Services

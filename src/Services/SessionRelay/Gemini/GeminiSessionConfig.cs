@@ -73,12 +73,13 @@ public sealed record GeminiAutomaticActivityDetection
     public int PrefixPaddingMs { get; init; } = 20;
 
     /// <summary>
-    /// 250 ms of trailing silence keeps turn-taking responsive without clipping natural word endings.
-    /// The widget also sends audioStreamEnd when local speech gating detects sustained silence,
-    /// so this server-side threshold acts as a low-latency fallback rather than the only turn signal.
+    /// 200 ms of trailing silence triggers server-side turn completion. Combined with the widget's
+    /// client-side audioStreamEnd signal (sent after 4 consecutive silent 64 ms chunks = 256 ms),
+    /// the effective end-of-turn detection is approximately 200–256 ms of silence, which is tight
+    /// enough for natural phone-style turn-taking without clipping word endings.
     /// </summary>
     [JsonPropertyName("silenceDurationMs")]
-    public int SilenceDurationMs { get; init; } = 250;
+    public int SilenceDurationMs { get; init; } = 200;
 }
 
 public sealed record GeminiGenerationConfig

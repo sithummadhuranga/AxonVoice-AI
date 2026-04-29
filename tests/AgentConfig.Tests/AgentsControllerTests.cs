@@ -146,6 +146,39 @@ public sealed class AgentsControllerTests
     }
 
     [Fact]
+    public async Task CreateAgentAsync_OmittedTools_DefaultsToNoWorkflowTools()
+    {
+        var tenantId = Guid.NewGuid();
+
+        await using var db = CreateDbContext();
+        db.Tenants.Add(CreateTenant(tenantId));
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db, tenantId);
+
+        var result = await controller.CreateAgentAsync(
+            new CreateAgentRequest(
+                Name: "general-reception",
+                DisplayName: "General Reception",
+                PersonaPrompt: "Answer caller questions and stay within the configured workflows.",
+                PrimaryLanguage: "en",
+                SupportedLanguages: ["en", "si"],
+                VoiceName: "Puck",
+                ToolsEnabled: null,
+                SessionTimeoutSeconds: 600,
+                SilenceTimeoutSeconds: 90,
+                IsActive: true),
+            CancellationToken.None);
+
+        var created = result.Should().BeOfType<CreatedResult>().Subject;
+        var payload = created.Value.Should().BeOfType<AgentDetailResponse>().Subject;
+        payload.ToolsEnabled.Should().BeEmpty();
+
+        var savedAgent = await db.Agents.SingleAsync();
+        savedAgent.ToolsEnabled.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UpdateAgentAsync_ValidMutation_UpdatesEditableFields()
     {
         var tenantId = Guid.NewGuid();
@@ -206,13 +239,113 @@ public sealed class AgentsControllerTests
         agent.UpdatedAt.Should().BeAfter(createdAt);
     }
 
-    private static AgentsController CreateController(AgentConfigDbContext db, Guid tenantId)
+    [Fact]
+    public async Task GetAgentConfigAsync_BookingToolsEnabledWithoutBusinessHours_DisablesBookingWorkflow()
+    {
+        var tenantId = Guid.NewGuid();
+        var encryption = new ApiKeyEncryptionService(Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray()));
+
+        await using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = tenantId,
+            Name = "Axon Bistro",
+            ApiKeyEncrypted = encryption.Encrypt("gemini-secret"),
+            DefaultLanguage = "si",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        db.Agents.Add(new Agent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Name = "salon-front-desk",
+            DisplayName = "Salon Front Desk",
+            PersonaPrompt = "Handle appointment requests carefully.",
+            SupportedLanguages = ["si", "ta", "en"],
+            PrimaryLanguage = "si",
+            VoiceName = "Aoede",
+            ToolsEnabled = ["check_availability", "create_pending_booking"],
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db, tenantId, encryption);
+        var agentId = await db.Agents.Select(agent => agent.Id).SingleAsync();
+
+        var result = await controller.GetAgentConfigAsync(agentId, tenantId, CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = ok.Value.Should().BeOfType<AxonVoiceAI.Shared.DTOs.AgentConfigDto>().Subject;
+        payload.BookingEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetAgentConfigAsync_BusinessHoursConfigured_EnablesBookingWorkflow()
+    {
+        var tenantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var encryption = new ApiKeyEncryptionService(Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray()));
+
+        await using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = tenantId,
+            Name = "Axon Bistro",
+            ApiKeyEncrypted = encryption.Encrypt("gemini-secret"),
+            DefaultLanguage = "si",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        db.Agents.Add(new Agent
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "ticket-desk",
+            DisplayName = "Ticket Desk",
+            PersonaPrompt = "Handle seat reservations carefully.",
+            SupportedLanguages = ["si", "ta", "en"],
+            PrimaryLanguage = "si",
+            VoiceName = "Aoede",
+            ToolsEnabled = ["check_availability", "create_pending_booking"],
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        db.BusinessHours.Add(new BusinessHours
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agentId,
+            TenantId = tenantId,
+            DayOfWeek = 1,
+            OpenTime = new TimeOnly(9, 0),
+            CloseTime = new TimeOnly(18, 0),
+            SlotDurationMinutes = 60,
+            MaxCapacityPerSlot = 20,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db, tenantId, encryption);
+
+        var result = await controller.GetAgentConfigAsync(agentId, tenantId, CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = ok.Value.Should().BeOfType<AxonVoiceAI.Shared.DTOs.AgentConfigDto>().Subject;
+        payload.BookingEnabled.Should().BeTrue();
+    }
+
+    private static AgentsController CreateController(AgentConfigDbContext db, Guid tenantId, ApiKeyEncryptionService? encryption = null)
     {
         var controller = new AgentsController(
             db,
             new SessionTokenService("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "http://localhost:8080"),
             CreateRedisMock().Object,
-            new ApiKeyEncryptionService(Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray())));
+            encryption ?? new ApiKeyEncryptionService(Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray())));
 
         controller.ControllerContext = new ControllerContext
         {

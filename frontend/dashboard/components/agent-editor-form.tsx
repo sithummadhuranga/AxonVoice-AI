@@ -77,7 +77,7 @@ export function AgentEditorForm({
             className={`${fieldClassName} min-h-44 resize-y leading-7`}
             defaultValue={state.values.personaPrompt}
             name="personaPrompt"
-            placeholder="Greet callers warmly, confirm their preferred language, and gather booking details with concise follow-up questions."
+            placeholder="Greet callers warmly, answer business questions clearly, and only use the enabled tools after confirming the needed details."
             required
             rows={7}
           />
@@ -146,7 +146,7 @@ export function AgentEditorForm({
           ))}
         </SectionFrame>
 
-        <SectionFrame description="Only enable tools that the current tenant workflow is ready to support." title="Enabled tools">
+        <SectionFrame description="Only enable the workflows this agent truly owns. Booking tools require business hours; ordering works best once pricing or catalog knowledge is loaded." title="Enabled tools">
           {agentToolOptions.map((tool) => (
             <label key={tool.value} className="flex items-start gap-3 rounded-[1.15rem] border border-line bg-white/78 px-4 py-3.5 text-sm text-foreground transition hover:border-accent/20 hover:bg-white/92">
               <input

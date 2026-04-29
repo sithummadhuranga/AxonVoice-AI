@@ -193,7 +193,8 @@ public sealed class FunctionCallInterceptor
         arguments["agentId"] = _agentId;
         arguments["tenantId"] = _tenantId;
 
-        if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal))
+        if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal)
+            || string.Equals(functionName, "place_order", StringComparison.Ordinal))
         {
             arguments["sessionId"] = _sessionId;
             arguments["detectedLanguage"] = _language;

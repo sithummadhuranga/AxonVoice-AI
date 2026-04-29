@@ -30,8 +30,9 @@ public sealed class InternalToolsControllerTests
             .ReturnsAsync(expected);
 
         var bookingRepository = new Mock<IBookingRepository>(MockBehavior.Strict);
+        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
 
-        var controller = new InternalToolsController(db, availabilityRepository.Object, bookingRepository.Object);
+        var controller = new InternalToolsController(db, availabilityRepository.Object, bookingRepository.Object, orderRepository.Object);
 
         var result = await controller.CheckAvailabilityAsync(agent.Id, requestedDatetime, 4, CancellationToken.None);
 
@@ -79,7 +80,9 @@ public sealed class InternalToolsControllerTests
                 CancellationToken.None))
             .ReturnsAsync(expected);
 
-        var controller = new InternalToolsController(db, availabilityRepository.Object, bookingRepository.Object);
+        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
+
+        var controller = new InternalToolsController(db, availabilityRepository.Object, bookingRepository.Object, orderRepository.Object);
 
         var result = await controller.CreatePendingBookingAsync(agent.Id, request, CancellationToken.None);
 

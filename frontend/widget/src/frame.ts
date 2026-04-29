@@ -466,8 +466,9 @@ function bootstrapFrame(frameConfig: FrameConfig): void {
 
       timer.reset();
       timerDisplay.textContent = CountdownTimer.format(frameConfig.sessionTimeoutSeconds);
-      await audioCapture.start();
       stateMachine.transition('requesting-token');
+
+      const audioStartTask = audioCapture.start();
 
       const connectionTask = connection.connect({
         agentId: frameConfig.agentId,
@@ -475,6 +476,7 @@ function bootstrapFrame(frameConfig: FrameConfig): void {
         channel: 'web',
       });
 
+      await audioStartTask;
       stateMachine.transition('connecting');
       await connectionTask;
       stateMachine.transition('connected');

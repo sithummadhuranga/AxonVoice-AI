@@ -1,5 +1,5 @@
 export type AgentLanguageCode = 'si' | 'ta' | 'en';
-export type AgentToolName = 'check_availability' | 'create_pending_booking';
+export type AgentToolName = 'check_availability' | 'create_pending_booking' | 'place_order';
 
 export type AgentFormValues = {
   name: string;
@@ -37,12 +37,17 @@ export const agentToolOptions: ReadonlyArray<{
   {
     value: 'check_availability',
     label: 'Check availability',
-    description: 'Let the agent inspect capacity before it promises a slot.',
+    description: 'Let the agent inspect capacity before it promises a table, appointment, seat, or time slot.',
   },
   {
     value: 'create_pending_booking',
     label: 'Create pending booking',
-    description: 'Hold a slot after the caller confirms the reservation details.',
+    description: 'Hold a confirmed reservation or appointment until staff reviews it.',
+  },
+  {
+    value: 'place_order',
+    label: 'Place order',
+    description: 'Store a confirmed order after the caller agrees to the final item list and total.',
   },
 ];
 
@@ -55,7 +60,7 @@ const defaultAgentFormValues: AgentFormValues = {
   voiceName: 'Sulafat',
   sessionTimeoutSeconds: '600',
   silenceTimeoutSeconds: '90',
-  toolsEnabled: ['check_availability', 'create_pending_booking'],
+  toolsEnabled: [],
   isActive: true,
 };
 
@@ -94,6 +99,8 @@ export function getToolLabel(tool: string): string {
       return 'Check availability';
     case 'create_pending_booking':
       return 'Create pending booking';
+    case 'place_order':
+      return 'Place order';
     default:
       return tool.replaceAll('_', ' ');
   }

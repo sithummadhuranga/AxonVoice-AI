@@ -54,7 +54,7 @@ describe('evaluateVoiceActivity', () => {
     let state = { isSpeechActive: true, consecutiveSilentChunks: 0, noiseFloorRms: 0.0015 };
     let shouldEmitSpeechEnd = false;
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 4; index += 1) {
       const decision = evaluateVoiceActivity(state, new Float32Array([0.0005, -0.0005, 0.0005, -0.0005]));
       state = decision.nextState;
       shouldEmitSpeechEnd = decision.shouldEmitSpeechEnd;

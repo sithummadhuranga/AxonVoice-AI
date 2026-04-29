@@ -24,6 +24,7 @@ var knowledgeBaseUrl = builder.Configuration.GetRequiredValue(builder.Environmen
 var conversationStoreUrl = builder.Configuration.GetRequiredValue(builder.Environment, "CONVERSATION_STORE_URL");
 
 builder.Services.AddPlatformDataProtection(builder.Configuration, builder.Environment, "AxonVoiceAI.SessionRelay");
+builder.Services.AddMemoryCache();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisUrl));
@@ -48,6 +49,7 @@ builder.Services.AddHttpClient("conversation-store", client =>
 
 builder.Services.AddSingleton<IAvailabilityRepository, AgentConfigAvailabilityRepository>();
 builder.Services.AddSingleton<IBookingRepository, AgentConfigBookingRepository>();
+builder.Services.AddSingleton<IOrderRepository, AgentConfigOrderRepository>();
 builder.Services.AddSingleton<IKnowledgeSearchRepository, KnowledgeBaseKnowledgeSearchRepository>();
 builder.Services.AddSingleton<ConversationStoreSessionWriter>();
 
@@ -56,11 +58,13 @@ builder.Services.AddSingleton<KernelPluginCollection>(sp =>
 {
     var availabilityRepo = sp.GetRequiredService<IAvailabilityRepository>();
     var bookingRepo = sp.GetRequiredService<IBookingRepository>();
+    var orderRepo = sp.GetRequiredService<IOrderRepository>();
     var knowledgeSearchRepo = sp.GetRequiredService<IKnowledgeSearchRepository>();
     var collection = new KernelPluginCollection();
     collection.AddFromObject(new KnowledgeSearchPlugin(knowledgeSearchRepo));
     collection.AddFromObject(new AvailabilityPlugin(availabilityRepo));
     collection.AddFromObject(new BookingPlugin(bookingRepo));
+    collection.AddFromObject(new OrderPlugin(orderRepo));
     return collection;
 });
 

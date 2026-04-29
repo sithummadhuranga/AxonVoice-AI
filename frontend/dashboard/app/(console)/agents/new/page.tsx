@@ -47,9 +47,9 @@ export default async function NewAgentPage() {
               {[
                 { label: 'Internal name', detail: 'A short slug used in API paths. Use lowercase with hyphens.' },
                 { label: 'Display name', detail: 'What callers hear when the agent introduces itself.' },
-                { label: 'Persona prompt', detail: 'Sets tone, behaviour, and task focus for the AI voice.' },
+                { label: 'Persona prompt', detail: 'Sets tone, boundaries, and task focus for the AI voice. Keep it domain-specific and operational.' },
                 { label: 'Primary language', detail: 'The default language for new calls before caller preference is detected.' },
-                { label: 'Tools', detail: 'Enable booking and availability tools once business hours are configured.' },
+                { label: 'Tools', detail: 'Start with only the workflows this agent truly owns. Booking tools need business hours first; ordering works best after catalog or price knowledge is uploaded.' },
               ].map((tip) => (
                 <li key={tip.label} className="rounded-[1.15rem] border border-line bg-white/78 px-4 py-3 text-xs">
                   <p className="font-medium text-foreground">{tip.label}</p>

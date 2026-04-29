@@ -10,8 +10,10 @@ public sealed class KnowledgeContextQueryBuilderTests
     {
         var query = KnowledgeContextQueryBuilder.BuildDefault(string.Empty);
 
-        query.Should().Contain("menu items");
+        query.Should().Contain("products services pricing");
         query.Should().Contain("reservations");
+        query.Should().Contain("appointments");
+        query.Should().Contain("tickets");
         query.Should().Contain("availability");
         query.Should().Contain("sinhala tamil english");
     }

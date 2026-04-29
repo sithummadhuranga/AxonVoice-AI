@@ -17,9 +17,9 @@ namespace AxonVoiceAI.AgentConfig.Controllers;
 public sealed class AgentsController : ControllerBase
 {
     private static readonly string[] DefaultSupportedLanguages = ["si", "ta", "en"];
-    private static readonly string[] DefaultTools = ["check_availability", "create_pending_booking"];
+    private static readonly string[] DefaultTools = [];
     private static readonly HashSet<string> SupportedLanguageCodes = ["si", "ta", "en"];
-    private static readonly HashSet<string> SupportedToolNames = ["check_availability", "create_pending_booking"];
+    private static readonly HashSet<string> SupportedToolNames = ["check_availability", "create_pending_booking", "place_order"];
 
     private readonly AgentConfigDbContext _db;
     private readonly SessionTokenService _sessionTokens;
@@ -206,8 +206,11 @@ public sealed class AgentsController : ControllerBase
         if (agent is null) return NotFound();
 
         var decryptedKey = _encryption.Decrypt(agent.Tenant.ApiKeyEncrypted);
-        var bookingEnabled = agent.ToolsEnabled.Contains("check_availability")
-            || agent.ToolsEnabled.Contains("create_pending_booking");
+        var scheduleConfigured = await _db.BusinessHours
+            .AnyAsync(bh => bh.AgentId == agent.Id && bh.TenantId == tenantId && bh.IsActive, ct);
+        var bookingEnabled = scheduleConfigured && (agent.ToolsEnabled.Contains("check_availability")
+            || agent.ToolsEnabled.Contains("create_pending_booking"));
+        var orderingEnabled = agent.ToolsEnabled.Contains("place_order");
 
         var config = new AgentConfigDto(
             AgentId: agent.Id,
@@ -221,6 +224,7 @@ public sealed class AgentsController : ControllerBase
             GeminiModel: agent.GeminiModel,
             GeminiApiKey: decryptedKey,
             BookingEnabled: bookingEnabled,
+            OrderingEnabled: orderingEnabled,
             SessionTimeoutSeconds: agent.SessionTimeoutSeconds,
             SilenceTimeoutSeconds: agent.SilenceTimeoutSeconds);
 

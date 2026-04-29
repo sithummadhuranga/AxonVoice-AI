@@ -48,15 +48,17 @@ public sealed class SystemPromptAssemblerTests
         prompt.Should().Contain("If the language is ambiguous after two exchanges, continue in Sinhala.");
         prompt.Should().Contain("If the caller responds in a different supported language (Sinhala, Tamil, English)");
         prompt.Should().Contain("search_knowledge_base");
-        prompt.Should().Contain("menu and price questions");
-        prompt.Should().Contain("Before calling ANY tool, ALWAYS speak a brief acknowledgment phrase to the caller first.");
+        prompt.Should().Contain("products, services, pricing, opening hours, location, policies, delivery, appointment types, ticket rules");
+        prompt.Should().Contain("Before calling any tool, always speak a brief acknowledgment first:");
         prompt.Should().Contain("මොහොතක් ඉන්න, මම ඒක පරීක්ෂා කරලා කියන්නම්.");
         prompt.Should().Contain("ஒரு நிமிடம், நான் சரிபார்த்து சொல்கிறேன்.");
         prompt.Should().Contain("One moment, let me check that for you.");
-        prompt.Should().Contain("Never say the waiting acknowledgment in English unless the current conversation language is English.");
+        prompt.Should().Contain("Never say an English acknowledgment in a Sinhala or Tamil session.");
         prompt.Should().Contain("After a successful booking response, read out the confirmation code and stop.");
-        prompt.Should().Contain("Use natural spoken language throughout. For Sinhala and Tamil");
-        prompt.Should().Contain("For Sinhala and Tamil sessions, do not insert English filler words or English wait phrases unless the caller explicitly switches languages.");
+        prompt.Should().Contain("Only offer actions that match the enabled tools and confirmed business facts in the current session.");
+        prompt.Should().Contain("Do not take or confirm orders, purchases, or delivery requests because ordering tools are not enabled.");
+        prompt.Should().Contain("Use natural everyday spoken phrasing. For Sinhala and Tamil");
+        prompt.Should().Contain("avoid stiff written style and English filler words");
         prompt.Should().Contain("Call check_availability exactly once");
     }
 
@@ -83,7 +85,7 @@ public sealed class SystemPromptAssemblerTests
         sessionConfig.Setup.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName.Should().Be("Sulafat");
     }
 
-    private static AgentConfigDto CreateAgentConfig(bool bookingEnabled = true)
+    private static AgentConfigDto CreateAgentConfig(bool bookingEnabled = true, bool orderingEnabled = false)
     {
         return new AgentConfigDto(
             AgentId: Guid.NewGuid(),
@@ -97,6 +99,7 @@ public sealed class SystemPromptAssemblerTests
             GeminiModel: "gemini-2.5-flash-native-audio-preview-12-2025",
             GeminiApiKey: "secret",
             BookingEnabled: bookingEnabled,
+            OrderingEnabled: orderingEnabled,
             SessionTimeoutSeconds: 600,
             SilenceTimeoutSeconds: 90);
     }
