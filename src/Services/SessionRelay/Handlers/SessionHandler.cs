@@ -1,12 +1,15 @@
 using AxonVoiceAI.SessionRelay.Audio;
+using AxonVoiceAI.SessionRelay.ConversationStore;
 using AxonVoiceAI.SessionRelay.Gemini;
 using AxonVoiceAI.SessionRelay.Handlers;
 using AxonVoiceAI.SessionRelay.Prompts;
 using AxonVoiceAI.Shared.Contracts;
 using AxonVoiceAI.Shared.DTOs;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.Http.Json;
 
 namespace AxonVoiceAI.SessionRelay.Handlers;
@@ -17,19 +20,30 @@ namespace AxonVoiceAI.SessionRelay.Handlers;
 /// </summary>
 public sealed class SessionHandler
 {
+    private static readonly TimeSpan AgentConfigCacheDuration = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan KnowledgeContextCacheDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan EmptyKnowledgeContextCacheDuration = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan KnowledgeBootstrapBudget = TimeSpan.FromMilliseconds(1200);
+
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMemoryCache _memoryCache;
     private readonly ILogger<SessionHandler> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly KernelPluginCollection _plugins;
+    private readonly ConversationStoreSessionWriter _sessionWriter;
 
     public SessionHandler(
         IHttpClientFactory httpClientFactory,
+        IMemoryCache memoryCache,
         KernelPluginCollection plugins,
+        ConversationStoreSessionWriter sessionWriter,
         ILogger<SessionHandler> logger,
         ILoggerFactory loggerFactory)
     {
         _httpClientFactory = httpClientFactory;
+        _memoryCache = memoryCache;
         _plugins = plugins;
+        _sessionWriter = sessionWriter;
         _logger = logger;
         _loggerFactory = loggerFactory;
     }
@@ -48,16 +62,25 @@ public sealed class SessionHandler
 
         _logger.LogInformation("Session starting.");
 
-        // Fetch agent config and knowledge base context in parallel.
-        var agentConfigTask = FetchAgentConfigAsync(context.AgentId, context.TenantId, ct);
-        var knowledgeTask = FetchKnowledgeAsync(context.AgentId, context.TenantId, context.Language, ct);
+        var bootstrapStopwatch = Stopwatch.StartNew();
+        var bootstrap = await GetBootstrapAsync(context, ct);
+        bootstrapStopwatch.Stop();
 
-        await Task.WhenAll(agentConfigTask, knowledgeTask);
+        var agentConfig = bootstrap.AgentConfig;
+        var knowledgeChunks = bootstrap.KnowledgeChunks;
+        var sessionLanguage = string.IsNullOrWhiteSpace(context.Language)
+            ? agentConfig.Language
+            : context.Language;
 
-        var agentConfig = await agentConfigTask;
-        var knowledgeChunks = await knowledgeTask;
+        _logger.LogInformation(
+            "Session bootstrap ready. AgentConfigCacheHit={AgentConfigCacheHit} KnowledgeCacheHit={KnowledgeCacheHit} KnowledgeChunkCount={KnowledgeChunkCount} BootstrapMs={BootstrapMs}",
+            bootstrap.AgentConfigCacheHit,
+            bootstrap.KnowledgeCacheHit,
+            knowledgeChunks.Count,
+            bootstrapStopwatch.ElapsedMilliseconds);
 
         var sessionConfig = SystemPromptAssembler.BuildSessionConfig(agentConfig, knowledgeChunks);
+        var sessionStopwatch = Stopwatch.StartNew();
 
         var geminiClient = new GeminiLiveClient(
             _loggerFactory.CreateLogger<GeminiLiveClient>(),
@@ -66,10 +89,11 @@ public sealed class SessionHandler
         await using (geminiClient)
         {
             await geminiClient.ConnectAsync(agentConfig.GeminiApiKey, sessionConfig, ct);
+            await _sessionWriter.RecordSessionStartAsync(context, channel.Type, sessionLanguage, ct);
 
             var interceptor = new FunctionCallInterceptor(
                 BuildKernel(),
-                agentConfig.Language,
+                sessionLanguage,
                 context.TenantId.ToString(),
                 context.AgentId.ToString(),
                 context.SessionId.ToString(),
@@ -78,7 +102,7 @@ public sealed class SessionHandler
             // Run inbound (caller → Gemini) and outbound (Gemini → caller) loops concurrently.
             using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var inboundTask = ForwardInboundAudioAsync(channel, geminiClient, loopCts.Token);
-            var outboundTask = ForwardOutboundAudioAsync(geminiClient, channel, interceptor, loopCts.Token);
+            var outboundTask = ForwardOutboundAudioAsync(context, geminiClient, channel, interceptor, loopCts.Token);
 
             try
             {
@@ -91,6 +115,12 @@ public sealed class SessionHandler
             }
         }
 
+        sessionStopwatch.Stop();
+        await _sessionWriter.CloseSessionAsync(
+            context,
+            sessionStopwatch.Elapsed.TotalSeconds >= int.MaxValue ? int.MaxValue : (int)sessionStopwatch.Elapsed.TotalSeconds,
+            ct);
+
         _logger.LogInformation("Session ended.");
     }
 
@@ -99,13 +129,24 @@ public sealed class SessionHandler
         GeminiLiveClient geminiClient,
         CancellationToken ct)
     {
-        await foreach (var chunk in channel.GetInboundAudioStreamAsync(ct))
+        await foreach (var frame in channel.GetInboundAudioFramesAsync(ct))
         {
-            await geminiClient.SendAudioChunkAsync(chunk, ct);
+            switch (frame.Kind)
+            {
+                case InboundAudioFrameKind.Audio:
+                    await geminiClient.SendAudioChunkAsync(frame.AudioChunk, ct);
+                    break;
+                case InboundAudioFrameKind.AudioStreamEnd:
+                    await geminiClient.SendAudioStreamEndAsync(ct);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported inbound audio frame kind '{frame.Kind}'.");
+            }
         }
     }
 
     private async Task ForwardOutboundAudioAsync(
+        SessionStartContextDto context,
         GeminiLiveClient geminiClient,
         IRealtimeAudioChannel channel,
         FunctionCallInterceptor interceptor,
@@ -122,7 +163,7 @@ public sealed class SessionHandler
 
                 if (message.ToolCall is { FunctionCalls.Count: > 0 })
                 {
-                    pendingToolTasks.Add(HandleToolCallsAsync(geminiClient, interceptor, message.ToolCall.FunctionCalls, pendingToolCalls, ct));
+                    pendingToolTasks.Add(HandleToolCallsAsync(context, geminiClient, interceptor, message.ToolCall.FunctionCalls, pendingToolCalls, ct));
                     continue;
                 }
 
@@ -130,6 +171,11 @@ public sealed class SessionHandler
                 {
                     CancelPendingToolCalls(message.ToolCallCancellation.Ids, pendingToolCalls);
                     continue;
+                }
+
+                if (message.ServerContent?.Interrupted is true)
+                {
+                    await channel.SendOutboundControlAsync(OutboundAudioControl.InterruptPlayback(), ct);
                 }
 
                 if (message.ServerContent?.ModelTurn is { Parts.Count: > 0 })
@@ -160,6 +206,7 @@ public sealed class SessionHandler
     }
 
     private async Task HandleToolCallsAsync(
+        SessionStartContextDto context,
         GeminiLiveClient geminiClient,
         FunctionCallInterceptor interceptor,
         IReadOnlyList<GeminiFunctionCall> functionCalls,
@@ -172,26 +219,34 @@ public sealed class SessionHandler
 
         try
         {
-            var acknowledgmentTask = TrySendAcknowledgmentAsync(interceptor, geminiClient, ct);
-            var responseTasks = batchCalls
-                .Select(pendingToolCall => interceptor.HandleSingleAsync(pendingToolCall.FunctionCall, pendingToolCall.CancellationTokenSource.Token))
+            // The model speaks an acknowledgment phrase naturally before emitting the toolCall message
+            // (instructed via the system prompt). No clientContent injection is needed here — sending
+            // clientContent mid-session interrupts model generation and corrupts conversation state.
+            var executionTasks = batchCalls
+                .Select(pendingToolCall => interceptor.HandleSingleWithTelemetryAsync(pendingToolCall.FunctionCall, pendingToolCall.CancellationTokenSource.Token))
                 .ToArray();
 
-            await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+            await Task.WhenAll(executionTasks.Select(static task => (Task)task));
 
-            var responses = batchCalls
+            var completedExecutions = batchCalls
                 .Select((pendingToolCall, index) => new
                 {
                     PendingToolCall = pendingToolCall,
-                    Response = responseTasks[index].Result,
+                    Execution = executionTasks[index].Result,
                 })
-                .Where(static item => !item.PendingToolCall.CancellationTokenSource.IsCancellationRequested && item.Response is not null)
-                .Select(static item => item.Response!)
+                .Where(static item => !item.PendingToolCall.CancellationTokenSource.IsCancellationRequested && item.Execution is not null)
+                .Select(static item => item.Execution!)
+                .ToArray();
+
+            var responses = completedExecutions
+                .Select(static execution => execution.Response)
                 .ToArray();
 
             if (responses.Length > 0)
             {
-                await geminiClient.SendToolResponsesAsync(responses, ct);
+                await Task.WhenAll(
+                    geminiClient.SendToolResponsesAsync(responses, ct),
+                    _sessionWriter.RecordFunctionCallsAsync(context, completedExecutions, ct));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -255,24 +310,6 @@ public sealed class SessionHandler
         }
     }
 
-    private async Task TrySendAcknowledgmentAsync(
-        FunctionCallInterceptor interceptor,
-        GeminiLiveClient geminiClient,
-        CancellationToken ct)
-    {
-        try
-        {
-            await interceptor.SendAcknowledgmentAsync(geminiClient, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Tool call acknowledgment failed; continuing with plugin execution.");
-        }
-    }
-
     private async Task<AgentConfigDto> FetchAgentConfigAsync(Guid agentId, Guid tenantId, CancellationToken ct)
     {
         var client = _httpClientFactory.CreateClient("agent-config");
@@ -288,12 +325,15 @@ public sealed class SessionHandler
         string sessionLanguage,
         CancellationToken ct)
     {
+        using var knowledgeFetchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        knowledgeFetchCts.CancelAfter(KnowledgeBootstrapBudget);
+
         try
         {
             var client = _httpClientFactory.CreateClient("knowledge-base");
             var retrievalQuery = KnowledgeContextQueryBuilder.BuildDefault(sessionLanguage);
             var requestUri = $"/internal/agents/{agentId}/knowledge/context?tenantId={tenantId:D}&query={Uri.EscapeDataString(retrievalQuery)}";
-            var response = await client.GetAsync(requestUri, ct);
+            var response = await client.GetAsync(requestUri, knowledgeFetchCts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
@@ -304,7 +344,15 @@ public sealed class SessionHandler
                 return [];
             }
 
-            return await response.Content.ReadFromJsonAsync<IReadOnlyList<KnowledgeChunkDto>>(ct) ?? [];
+            return await response.Content.ReadFromJsonAsync<IReadOnlyList<KnowledgeChunkDto>>(knowledgeFetchCts.Token) ?? [];
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogInformation(
+                "Knowledge base bootstrap fetch exceeded the startup budget for agent {AgentId} and tenant {TenantId}; proceeding without preloaded knowledge.",
+                agentId,
+                tenantId);
+            return [];
         }
         catch (Exception ex)
         {
@@ -312,6 +360,71 @@ public sealed class SessionHandler
             return [];
         }
     }
+
+    private async Task<SessionBootstrap> GetBootstrapAsync(SessionStartContextDto context, CancellationToken ct)
+    {
+        var agentConfigTask = GetCachedAgentConfigAsync(context.AgentId, context.TenantId, ct);
+        var knowledgeTask = GetCachedKnowledgeAsync(context.AgentId, context.TenantId, context.Language, ct);
+
+        await Task.WhenAll(agentConfigTask, knowledgeTask);
+
+        var agentConfig = await agentConfigTask;
+        var knowledge = await knowledgeTask;
+
+        return new SessionBootstrap(
+            agentConfig.Value,
+            knowledge.Value,
+            agentConfig.CacheHit,
+            knowledge.CacheHit);
+    }
+
+    private async Task<CachedValue<AgentConfigDto>> GetCachedAgentConfigAsync(
+        Guid agentId,
+        Guid tenantId,
+        CancellationToken ct)
+    {
+        var cacheKey = CreateAgentConfigCacheKey(agentId, tenantId);
+        if (_memoryCache.TryGetValue<AgentConfigDto>(cacheKey, out var cachedAgentConfig)
+            && cachedAgentConfig is not null)
+        {
+            return new CachedValue<AgentConfigDto>(cachedAgentConfig, CacheHit: true);
+        }
+
+        var agentConfig = await FetchAgentConfigAsync(agentId, tenantId, ct);
+        _memoryCache.Set(cacheKey, agentConfig, AgentConfigCacheDuration);
+        return new CachedValue<AgentConfigDto>(agentConfig, CacheHit: false);
+    }
+
+    private async Task<CachedValue<IReadOnlyList<KnowledgeChunkDto>>> GetCachedKnowledgeAsync(
+        Guid agentId,
+        Guid tenantId,
+        string sessionLanguage,
+        CancellationToken ct)
+    {
+        var cacheKey = CreateKnowledgeCacheKey(agentId, tenantId, sessionLanguage);
+        if (_memoryCache.TryGetValue<IReadOnlyList<KnowledgeChunkDto>>(cacheKey, out var cachedKnowledge)
+            && cachedKnowledge is not null)
+        {
+            return new CachedValue<IReadOnlyList<KnowledgeChunkDto>>(cachedKnowledge, CacheHit: true);
+        }
+
+        var knowledgeChunks = await FetchKnowledgeAsync(agentId, tenantId, sessionLanguage, ct);
+        var cacheDuration = knowledgeChunks.Count == 0
+            ? EmptyKnowledgeContextCacheDuration
+            : KnowledgeContextCacheDuration;
+
+        _memoryCache.Set(cacheKey, knowledgeChunks, cacheDuration);
+        return new CachedValue<IReadOnlyList<KnowledgeChunkDto>>(knowledgeChunks, CacheHit: false);
+    }
+
+    private static string CreateAgentConfigCacheKey(Guid agentId, Guid tenantId) =>
+        $"agent-config::{tenantId:D}::{agentId:D}";
+
+    private static string CreateKnowledgeCacheKey(Guid agentId, Guid tenantId, string sessionLanguage) =>
+        $"knowledge-context::{tenantId:D}::{agentId:D}::{NormalizeCacheSegment(sessionLanguage)}";
+
+    private static string NormalizeCacheSegment(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "default" : value.Trim().ToLowerInvariant();
 
     private Kernel BuildKernel()
     {
@@ -353,4 +466,12 @@ public sealed class SessionHandler
             }
         }
     }
+
+    private sealed record CachedValue<T>(T Value, bool CacheHit);
+
+    private sealed record SessionBootstrap(
+        AgentConfigDto AgentConfig,
+        IReadOnlyList<KnowledgeChunkDto> KnowledgeChunks,
+        bool AgentConfigCacheHit,
+        bool KnowledgeCacheHit);
 }

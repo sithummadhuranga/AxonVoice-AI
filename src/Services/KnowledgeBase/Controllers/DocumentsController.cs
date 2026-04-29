@@ -70,10 +70,10 @@ public sealed class DocumentsController : ControllerBase
         var tenantId = ResolveTenantId();
 
         if (file.Length == 0)
-            return BadRequest("File is empty.");
+            return BadRequest(new { error = "File is empty." });
 
         if (!AllowedMimeTypes.Contains(file.ContentType))
-            return BadRequest($"Unsupported file type: {file.ContentType}");
+            return BadRequest(new { error = $"Unsupported file type: {file.ContentType}" });
 
         // Compute content hash to enable deduplication.
         using var hashStream = file.OpenReadStream();
@@ -84,7 +84,7 @@ public sealed class DocumentsController : ControllerBase
             d => d.AgentId == agentId && d.ContentHash == contentHash, ct);
 
         if (existing is not null)
-            return Conflict(new { Message = "A document with this content already exists.", ExistingId = existing.Id });
+            return Conflict(new { error = "A document with this content already exists.", existingId = existing.Id });
 
         var document = new KnowledgeDocument
         {
@@ -112,7 +112,7 @@ public sealed class DocumentsController : ControllerBase
 
         _ingestionQueue.Enqueue(new IngestionRequest(document.Id, fileStream, file.ContentType));
 
-        return AcceptedAtAction(nameof(GetDocumentStatusAsync), new { agentId, documentId = document.Id },
+        return Accepted($"/agents/{agentId:D}/documents/{document.Id:D}",
             new DocumentSummary(document.Id, document.Filename, document.Status, null, document.UploadedAt));
     }
 
@@ -134,7 +134,7 @@ public sealed class DocumentsController : ControllerBase
 
     private Guid ResolveTenantId()
     {
-        var claim = User.FindFirst("tenant_id")?.Value;
+        var claim = User.FindFirst(AxonVoiceAI.Shared.Security.PlatformTokenClaims.TenantId)?.Value;
         return claim is not null && Guid.TryParse(claim, out var id) ? id : Guid.Empty;
     }
 }

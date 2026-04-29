@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS agents (
     primary_language    VARCHAR(10) NOT NULL DEFAULT 'si'
                             CHECK (primary_language IN ('si', 'ta', 'en')),
     voice_name          VARCHAR(100) NOT NULL DEFAULT 'Aoede',
-    gemini_model        VARCHAR(100) NOT NULL DEFAULT 'gemini-2.0-flash-live-001',
+    gemini_model        VARCHAR(100) NOT NULL DEFAULT 'gemini-2.5-flash-native-audio-preview-12-2025',
     gemini_cache_name   VARCHAR(500),
     session_timeout_sec INTEGER     NOT NULL DEFAULT 600,
     silence_timeout_sec INTEGER     NOT NULL DEFAULT 90,

@@ -47,7 +47,7 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
-                        .HasDefaultValue("gemini-2.0-flash-live-001")
+                        .HasDefaultValue("gemini-2.5-flash-native-audio-preview-12-2025")
                         .HasColumnName("gemini_model");
 
                     b.Property<bool>("IsActive")
@@ -298,6 +298,95 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
                     b.ToTable("confirmed_bookings", (string)null);
                 });
 
+            modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.Order", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("ConfirmationCode")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("confirmation_code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("CustomerLanguage")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("customer_language");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("customer_name");
+
+                    b.Property<string>("CustomerPhone")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("customer_phone");
+
+                    b.Property<string>("DeliveryAddress")
+                        .HasColumnType("text")
+                        .HasColumnName("delivery_address");
+
+                    b.Property<string>("ItemsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("items_json");
+
+                    b.Property<string>("OrderType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pickup")
+                        .HasColumnName("order_type");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("received")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("total_amount");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "TenantId", "CreatedAt")
+                        .HasDatabaseName("idx_orders_agent_tenant_created");
+
+                    b.ToTable("orders", (string)null);
+                });
+
             modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.PendingBooking", b =>
                 {
                     b.Property<Guid>("Id")
@@ -449,6 +538,75 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
                     b.ToTable("tenants", (string)null);
                 });
 
+            modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.TenantUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_login_at");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("normalized_email");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("owner")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("tenant_users", (string)null);
+                });
+
             modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.Agent", b =>
                 {
                     b.HasOne("AxonVoiceAI.AgentConfig.Data.Entities.Tenant", "Tenant")
@@ -499,6 +657,17 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
                     b.Navigation("PromotedFromPending");
                 });
 
+            modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.Order", b =>
+                {
+                    b.HasOne("AxonVoiceAI.AgentConfig.Data.Entities.Agent", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+                });
+
             modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.PendingBooking", b =>
                 {
                     b.HasOne("AxonVoiceAI.AgentConfig.Data.Entities.Agent", "Agent")
@@ -508,6 +677,17 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.TenantUser", b =>
+                {
+                    b.HasOne("AxonVoiceAI.AgentConfig.Data.Entities.Tenant", "Tenant")
+                        .WithMany("Users")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.Agent", b =>
@@ -524,6 +704,8 @@ namespace AxonVoiceAI.AgentConfig.Data.Migrations
             modelBuilder.Entity("AxonVoiceAI.AgentConfig.Data.Entities.Tenant", b =>
                 {
                     b.Navigation("Agents");
+
+                    b.Navigation("Users");
                 });
 #pragma warning restore 612, 618
         }

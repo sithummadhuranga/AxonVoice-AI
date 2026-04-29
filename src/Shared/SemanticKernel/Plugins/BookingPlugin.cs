@@ -23,6 +23,7 @@ public sealed class BookingPlugin
         [Description("Time in HH:MM format (24h)")] string time,
         [Description("Number of guests")] int partySize,
         [Description("The agent ID for this session")] string agentId,
+        [Description("The tenant ID for this session")] string tenantId,
         [Description("The session ID")] string sessionId,
         [Description("Detected session language code: si, ta, or en")] string detectedLanguage,
         [Description("Any special requests from the customer")] string? specialRequests = null,
@@ -37,6 +38,9 @@ public sealed class BookingPlugin
         if (!Guid.TryParse(agentId, out var parsedAgentId))
             throw new ArgumentException($"Invalid agent ID '{agentId}'");
 
+        if (!Guid.TryParse(tenantId, out var parsedTenantId))
+            throw new ArgumentException($"Invalid tenant ID '{tenantId}'");
+
         if (!Guid.TryParse(sessionId, out var parsedSessionId))
             throw new ArgumentException($"Invalid session ID '{sessionId}'");
 
@@ -44,11 +48,9 @@ public sealed class BookingPlugin
             parsedDate.ToDateTime(parsedTime),
             TimeSpan.Zero);
 
-        // TenantId is resolved from the booking repository context, not passed here —
-        // it is set from the JWT in the scoped session context before plugin invocation.
         var request = new CreatePendingBookingRequest(
             AgentId: parsedAgentId,
-            TenantId: Guid.Empty, // Populated by the repository from the scoped session context
+            TenantId: parsedTenantId,
             SessionId: parsedSessionId,
             CustomerName: customerName,
             CustomerPhone: customerPhone,

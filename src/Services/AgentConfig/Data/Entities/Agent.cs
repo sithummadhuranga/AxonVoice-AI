@@ -9,8 +9,8 @@ public class Agent
     public string PersonaPrompt { get; set; } = string.Empty;
     public string[] SupportedLanguages { get; set; } = ["si", "ta", "en"];
     public string PrimaryLanguage { get; set; } = "si";
-    public string VoiceName { get; set; } = "Aoede";
-    public string GeminiModel { get; set; } = "gemini-2.0-flash-live-001";
+    public string VoiceName { get; set; } = "Sulafat";
+    public string GeminiModel { get; set; } = "gemini-2.5-flash-native-audio-preview-12-2025";
     public int SessionTimeoutSeconds { get; set; } = 600;
     public int SilenceTimeoutSeconds { get; set; } = 90;
     public string[] ToolsEnabled { get; set; } = ["check_availability", "create_pending_booking"];

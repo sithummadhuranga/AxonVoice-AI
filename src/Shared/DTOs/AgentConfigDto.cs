@@ -12,6 +12,7 @@ public record AgentConfigDto(
     string GeminiModel,
     string GeminiApiKey,
     bool BookingEnabled,
+    bool OrderingEnabled,
     int SessionTimeoutSeconds,
     int SilenceTimeoutSeconds);
 

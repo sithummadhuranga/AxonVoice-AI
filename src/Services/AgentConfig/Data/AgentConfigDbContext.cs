@@ -8,11 +8,13 @@ public class AgentConfigDbContext : DbContext
     public AgentConfigDbContext(DbContextOptions<AgentConfigDbContext> options) : base(options) { }
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<TenantUser> TenantUsers => Set<TenantUser>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<BusinessHours> BusinessHours => Set<BusinessHours>();
     public DbSet<ClosedDate> ClosedDates => Set<ClosedDate>();
     public DbSet<PendingBooking> PendingBookings => Set<PendingBooking>();
     public DbSet<ConfirmedBooking> ConfirmedBookings => Set<ConfirmedBooking>();
+    public DbSet<Order> Orders => Set<Order>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +36,25 @@ public class AgentConfigDbContext : DbContext
             e.Property(t => t.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
         });
 
+        modelBuilder.Entity<TenantUser>(e =>
+        {
+            e.ToTable("tenant_users");
+            e.HasKey(user => user.Id);
+            e.Property(user => user.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(user => user.TenantId).HasColumnName("tenant_id").IsRequired();
+            e.Property(user => user.Email).HasColumnName("email").HasMaxLength(320).IsRequired();
+            e.Property(user => user.NormalizedEmail).HasColumnName("normalized_email").HasMaxLength(320).IsRequired();
+            e.Property(user => user.PasswordHash).HasColumnName("password_hash").IsRequired();
+            e.Property(user => user.Role).HasColumnName("role").HasMaxLength(50).HasDefaultValue(TenantUserRoles.Owner);
+            e.Property(user => user.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(user => user.LastLoginAt).HasColumnName("last_login_at");
+            e.Property(user => user.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(user => user.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(user => user.NormalizedEmail).IsUnique();
+            e.HasIndex(user => user.TenantId);
+            e.HasOne(user => user.Tenant).WithMany(tenant => tenant.Users).HasForeignKey(user => user.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<Agent>(e =>
         {
             e.ToTable("agents");
@@ -46,7 +67,7 @@ public class AgentConfigDbContext : DbContext
             e.Property(a => a.SupportedLanguages).HasColumnName("supported_languages").HasColumnType("text[]");
             e.Property(a => a.PrimaryLanguage).HasColumnName("primary_language").HasMaxLength(10).HasDefaultValue("si");
             e.Property(a => a.VoiceName).HasColumnName("voice_name").HasMaxLength(100).HasDefaultValue("Aoede");
-            e.Property(a => a.GeminiModel).HasColumnName("gemini_model").HasMaxLength(100).HasDefaultValue("gemini-2.0-flash-live-001");
+            e.Property(a => a.GeminiModel).HasColumnName("gemini_model").HasMaxLength(100).HasDefaultValue("gemini-2.5-flash-native-audio-preview-12-2025");
             e.Property(a => a.SessionTimeoutSeconds).HasColumnName("session_timeout_sec").HasDefaultValue(600);
             e.Property(a => a.SilenceTimeoutSeconds).HasColumnName("silence_timeout_sec").HasDefaultValue(90);
             e.Property(a => a.ToolsEnabled).HasColumnName("tools_enabled").HasColumnType("text[]");
@@ -131,6 +152,29 @@ public class AgentConfigDbContext : DbContext
             e.HasOne(c => c.PromotedFromPending).WithMany().HasForeignKey(c => c.PromotedFromPendingId);
             e.HasIndex(c => new { c.AgentId, c.BookingDatetime, c.Status })
              .HasDatabaseName("idx_confirmed_bookings_slot");
+        });
+
+        modelBuilder.Entity<Order>(e =>
+        {
+            e.ToTable("orders");
+            e.HasKey(o => o.Id);
+            e.Property(o => o.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(o => o.AgentId).HasColumnName("agent_id").IsRequired();
+            e.Property(o => o.TenantId).HasColumnName("tenant_id").IsRequired();
+            e.Property(o => o.SessionId).HasColumnName("session_id").IsRequired();
+            e.Property(o => o.CustomerName).HasColumnName("customer_name").HasMaxLength(255).IsRequired();
+            e.Property(o => o.CustomerPhone).HasColumnName("customer_phone").HasMaxLength(50).IsRequired();
+            e.Property(o => o.CustomerLanguage).HasColumnName("customer_language").HasMaxLength(10).IsRequired();
+            e.Property(o => o.ItemsJson).HasColumnName("items_json").HasColumnType("text").HasDefaultValue("[]").IsRequired();
+            e.Property(o => o.OrderType).HasColumnName("order_type").HasMaxLength(20).HasDefaultValue("pickup").IsRequired();
+            e.Property(o => o.DeliveryAddress).HasColumnName("delivery_address").HasColumnType("text");
+            e.Property(o => o.TotalAmount).HasColumnName("total_amount").HasColumnType("numeric(10,2)").IsRequired();
+            e.Property(o => o.ConfirmationCode).HasColumnName("confirmation_code").HasMaxLength(8).IsRequired();
+            e.Property(o => o.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue("received").IsRequired();
+            e.Property(o => o.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").IsRequired();
+            e.HasOne(o => o.Agent).WithMany().HasForeignKey(o => o.AgentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(o => new { o.AgentId, o.TenantId, o.CreatedAt })
+             .HasDatabaseName("idx_orders_agent_tenant_created");
         });
     }
 }

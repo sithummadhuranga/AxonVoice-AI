@@ -1,9 +1,12 @@
 using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Repositories;
+using AxonVoiceAI.AgentConfig.Data.Entities;
 using AxonVoiceAI.AgentConfig.Services;
 using AxonVoiceAI.Shared.Configuration;
 using AxonVoiceAI.Shared.Contracts;
+using AxonVoiceAI.Shared.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
@@ -30,9 +33,13 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
 
 // ── Domain Services ────────────────────────────────────────────────────────────
 builder.Services.AddSingleton(_ => new ApiKeyEncryptionService(masterKey));
+builder.Services.AddScoped<IPasswordHasher<TenantUser>, PasswordHasher<TenantUser>>();
+builder.Services.AddScoped<ConsoleAuthenticationService>();
+builder.Services.AddSingleton(_ => new ConsoleTokenService(jwtSigningKey, platformBaseUrl));
 builder.Services.AddSingleton(_ => new SessionTokenService(jwtSigningKey, platformBaseUrl));
 builder.Services.AddScoped<IAvailabilityRepository, AvailabilityRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 
 // ── Authentication ─────────────────────────────────────────────────────────────
 builder.Services
@@ -51,7 +58,14 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(PlatformAuthorizationPolicyNames.ConsoleAccess, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(PlatformTokenClaims.TokenUse, PlatformTokenUses.Console);
+    });
+});
 builder.Services.AddControllers();
 
 var app = builder.Build();
@@ -62,6 +76,22 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AgentConfigDbContext>();
     await db.Database.MigrateAsync();
 }
+
+app.UseExceptionHandler(pipeline =>
+{
+    pipeline.Run(async context =>
+    {
+        var exceptionFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ExceptionHandler");
+        logger.LogError(exceptionFeature?.Error, "Unhandled exception on {Method} {Path}",
+            context.Request.Method, context.Request.Path);
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new { error = "An internal error occurred." });
+    });
+});
 
 app.UseAuthentication();
 app.UseAuthorization();

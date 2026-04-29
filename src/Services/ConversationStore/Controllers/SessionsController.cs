@@ -52,7 +52,7 @@ public sealed class SessionsController : ControllerBase
             .FirstOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId, ct);
 
         if (session is null) return NotFound();
-        if (session.Status == "closed") return Conflict("Session is already closed.");
+        if (session.Status == "closed") return Conflict(new { error = "Session is already closed." });
 
         session.Status = "closed";
         session.EndedAt = DateTimeOffset.UtcNow;
@@ -156,7 +156,7 @@ public sealed class SessionsController : ControllerBase
 
     private Guid ResolveTenantId()
     {
-        var claim = User.FindFirst("tenant_id")?.Value;
+        var claim = User.FindFirst(AxonVoiceAI.Shared.Security.PlatformTokenClaims.TenantId)?.Value;
         return claim is not null && Guid.TryParse(claim, out var id) ? id : Guid.Empty;
     }
 }

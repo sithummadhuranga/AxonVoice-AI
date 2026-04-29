@@ -29,8 +29,9 @@ cd ../..
 # Copy environment template and fill in local values
 cp .env.example .env
 
-# Start infrastructure only (no application services)
-docker compose -f infra/docker-compose.dev.yml up -d
+# Start the development stack using the base compose file plus the local override.
+# The dev file is not standalone; it only overrides services declared in infra/docker-compose.yml.
+docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build
 
 # Run all .NET tests
 dotnet test AxonVoiceAI.slnx

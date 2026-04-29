@@ -13,12 +13,19 @@ interface SessionTokenResponse {
 export type MessageCallback = (data: ArrayBuffer) => void;
 export type CloseCallback = (code: number, reason: string) => void;
 export type ErrorCallback = (error: Event) => void;
+export type ControlMessageType = 'interrupt_playback';
+export type ControlCallback = (type: ControlMessageType) => void;
+
+interface ControlEnvelope {
+  type: string;
+}
 
 export class SessionConnection {
   private _socket: WebSocket | null = null;
   private _messageCallbacks: MessageCallback[] = [];
   private _closeCallbacks: CloseCallback[] = [];
   private _errorCallbacks: ErrorCallback[] = [];
+  private _controlCallbacks: ControlCallback[] = [];
 
   async connect(options: ConnectionOptions): Promise<void> {
     const session = await this._fetchSessionToken(options);
@@ -28,6 +35,12 @@ export class SessionConnection {
   send(pcm: ArrayBuffer): void {
     if (this._socket?.readyState === WebSocket.OPEN) {
       this._socket.send(pcm);
+    }
+  }
+
+  sendAudioStreamEnd(): void {
+    if (this._socket?.readyState === WebSocket.OPEN) {
+      this._socket.send(JSON.stringify({ type: 'audio_stream_end' }));
     }
   }
 
@@ -57,6 +70,14 @@ export class SessionConnection {
     return () => {
       const i = this._errorCallbacks.indexOf(callback);
       if (i !== -1) this._errorCallbacks.splice(i, 1);
+    };
+  }
+
+  onControlMessage(callback: ControlCallback): () => void {
+    this._controlCallbacks.push(callback);
+    return () => {
+      const i = this._controlCallbacks.indexOf(callback);
+      if (i !== -1) this._controlCallbacks.splice(i, 1);
     };
   }
 
@@ -90,10 +111,10 @@ export class SessionConnection {
 
   private _openWebSocket(wsUrl: string, token: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const socketUrl = new URL(wsUrl);
-      socketUrl.searchParams.set('token', token);
+      const socketUrl = new URL(normalizeSessionRelayUrl(wsUrl));
+      socketUrl.searchParams.set('token', normalizeSessionToken(token));
 
-      const socket = new WebSocket(socketUrl);
+      const socket = new WebSocket(socketUrl.toString());
       socket.binaryType = 'arraybuffer';
 
       const timeout = setTimeout(() => {
@@ -116,6 +137,14 @@ export class SessionConnection {
       socket.addEventListener('message', (event) => {
         if (event.data instanceof ArrayBuffer) {
           this._messageCallbacks.forEach(cb => cb(event.data));
+          return;
+        }
+
+        if (typeof event.data === 'string') {
+          const controlMessage = parseControlEnvelope(event.data);
+          if (controlMessage?.type === 'interrupt_playback') {
+            this._controlCallbacks.forEach(cb => cb('interrupt_playback'));
+          }
         }
       });
 
@@ -123,5 +152,57 @@ export class SessionConnection {
         this._closeCallbacks.forEach(cb => cb(event.code, event.reason));
       });
     });
+  }
+}
+
+function normalizeSessionRelayUrl(wsUrl: string): string {
+  return wsUrl.trim();
+}
+
+function normalizeSessionToken(token: string): string {
+  const normalizedToken = trimJwtBoundaryNoise(token);
+  const parts = normalizedToken.split('.');
+
+  if (parts.length !== 3 || parts.some((part) => part.length === 0 || !isJwtSegment(part))) {
+    throw new Error('Token response returned an invalid session token.');
+  }
+
+  return normalizedToken;
+}
+
+function trimJwtBoundaryNoise(value: string): string {
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && !isJwtBoundaryCharacter(value[start]!)) {
+    start += 1;
+  }
+
+  while (end > start && !isJwtBoundaryCharacter(value[end - 1]!)) {
+    end -= 1;
+  }
+
+  return value.slice(start, end);
+}
+
+function isJwtBoundaryCharacter(character: string): boolean {
+  return /^[A-Za-z0-9._-]$/.test(character);
+}
+
+function isJwtSegment(segment: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(segment);
+}
+
+function parseControlEnvelope(payload: string): ControlEnvelope | null {
+  try {
+    const value = JSON.parse(payload) as unknown;
+    if (!value || typeof value !== 'object' || !("type" in value)) {
+      return null;
+    }
+
+    const type = (value as { type?: unknown }).type;
+    return typeof type === 'string' ? { type } : null;
+  } catch {
+    return null;
   }
 }

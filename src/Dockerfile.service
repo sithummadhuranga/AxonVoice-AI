@@ -19,6 +19,10 @@ RUN dotnet publish "$PROJECT_FILE" -c Release -o /app/publish /p:UseAppHost=fals
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
+# poppler-utils provides pdftotext, used by the KnowledgeBase service for PDF text extraction.
+# Running extraction as a child process prevents PdfPig-style GC storms from affecting the .NET runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=build /app/publish .

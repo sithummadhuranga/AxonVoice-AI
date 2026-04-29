@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using AxonVoiceAI.Shared.DTOs;
+using AxonVoiceAI.Shared.Security;
 using Microsoft.IdentityModel.Tokens;
 
 namespace AxonVoiceAI.AgentConfig.Services;
@@ -29,9 +30,10 @@ public sealed class SessionTokenService
 
         var claims = new[]
         {
-            new Claim("tenant_id", tenantId.ToString()),
-            new Claim("agent_id", agentId.ToString()),
-            new Claim("session_id", sessionId.ToString()),
+            new Claim(PlatformTokenClaims.TenantId, tenantId.ToString()),
+            new Claim(PlatformTokenClaims.AgentId, agentId.ToString()),
+            new Claim(PlatformTokenClaims.SessionId, sessionId.ToString()),
+            new Claim(PlatformTokenClaims.TokenUse, PlatformTokenUses.Session),
             new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
         };
 
@@ -66,6 +68,19 @@ public sealed class SessionTokenService
             ClockSkew = TimeSpan.FromSeconds(30),
         };
 
-        return new JwtSecurityTokenHandler().ValidateToken(token, validationParameters, out _);
+        var handler = new JwtSecurityTokenHandler
+        {
+            MapInboundClaims = false,
+        };
+
+        var principal = handler.ValidateToken(token, validationParameters, out _);
+        var tokenUse = principal.FindFirstValue(PlatformTokenClaims.TokenUse);
+
+        if (!string.Equals(tokenUse, PlatformTokenUses.Session, StringComparison.Ordinal))
+        {
+            throw new SecurityTokenValidationException("Token is not valid for session access.");
+        }
+
+        return principal;
     }
 }

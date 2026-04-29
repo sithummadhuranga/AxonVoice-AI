@@ -10,6 +10,79 @@ interface FrameConfig {
   sessionTimeoutSeconds: number;
 }
 
+// Pcm16Player must be declared before the module-level initialisation below.
+// Class declarations are NOT hoisted in the Vite IIFE bundle — placing this after
+// the init block causes `new Pcm16Player()` inside bootstrapFrame to receive
+// `undefined` (the hoisted-but-uninitialised var binding), producing
+// "TypeError: h is not a constructor".
+class Pcm16Player {
+  // Gemini Live outputs PCM at 24 kHz mono. The AudioContext and every AudioBuffer
+  // must use 24 000 Hz — using 16 000 Hz here causes the audio to play at 1.5× speed
+  // with wrong pitch, which sounds like distorted noise to the caller.
+  private static readonly SAMPLE_RATE = 24_000;
+
+  private _context: AudioContext | null = null;
+  private readonly _activeSources = new Set<AudioBufferSourceNode>();
+  // Tracks the absolute AudioContext time at which the next chunk should start.
+  // When behind real-time (network stall) we clamp to currentTime so playback
+  // never freezes. Scheduling prevents audible gaps between consecutive chunks.
+  private _nextStartTime = 0;
+
+  play(buffer: ArrayBuffer): void {
+    if (!this._context) {
+      this._context = new AudioContext({ sampleRate: Pcm16Player.SAMPLE_RATE });
+      this._nextStartTime = this._context.currentTime;
+    }
+
+    const input = new Int16Array(buffer);
+    const output = new Float32Array(input.length);
+    for (let index = 0; index < input.length; index += 1) {
+      output[index] = input[index] / 0x7fff;
+    }
+
+    const audioBuffer = this._context.createBuffer(1, output.length, Pcm16Player.SAMPLE_RATE);
+    audioBuffer.copyToChannel(output, 0);
+
+    const source = this._context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(this._context.destination);
+    source.addEventListener('ended', () => {
+      this._activeSources.delete(source);
+    });
+
+    // Schedule this chunk to start exactly where the previous one ended.
+    // If we have fallen behind real-time (e.g. after a network hiccup), clamp
+    // to currentTime so we never schedule into the past.
+    const startTime = Math.max(this._context.currentTime, this._nextStartTime);
+    this._activeSources.add(source);
+    source.start(startTime);
+    this._nextStartTime = startTime + audioBuffer.duration;
+  }
+
+  interrupt(): void {
+    for (const source of this._activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // Ignore sources that have already ended between iteration and stop().
+      }
+    }
+
+    this._activeSources.clear();
+
+    if (this._context) {
+      this._nextStartTime = this._context.currentTime;
+    }
+  }
+
+  close(): void {
+    this.interrupt();
+    this._context?.close();
+    this._context = null;
+    this._nextStartTime = 0;
+  }
+}
+
 const config = readFrameConfig();
 
 if (!config) {
@@ -322,12 +395,22 @@ function bootstrapFrame(frameConfig: FrameConfig): void {
     }
   });
 
+  audioCapture.onSpeechEnded(() => {
+    connection.sendAudioStreamEnd();
+  });
+
   connection.onMessage((buffer) => {
     if (stateMachine.current === 'connected' || stateMachine.current === 'speaking') {
       stateMachine.transition('receiving');
     }
 
     player.play(buffer);
+  });
+
+  connection.onControlMessage((type) => {
+    if (type === 'interrupt_playback') {
+      player.interrupt();
+    }
   });
 
   connection.onError(() => {
@@ -383,8 +466,9 @@ function bootstrapFrame(frameConfig: FrameConfig): void {
 
       timer.reset();
       timerDisplay.textContent = CountdownTimer.format(frameConfig.sessionTimeoutSeconds);
-      await audioCapture.start();
       stateMachine.transition('requesting-token');
+
+      const audioStartTask = audioCapture.start();
 
       const connectionTask = connection.connect({
         agentId: frameConfig.agentId,
@@ -392,6 +476,7 @@ function bootstrapFrame(frameConfig: FrameConfig): void {
         channel: 'web',
       });
 
+      await audioStartTask;
       stateMachine.transition('connecting');
       await connectionTask;
       stateMachine.transition('connected');
@@ -539,33 +624,4 @@ function toErrorMessage(error: unknown): string {
   }
 
   return 'Unable to start the session.';
-}
-
-class Pcm16Player {
-  private _context: AudioContext | null = null;
-
-  play(buffer: ArrayBuffer): void {
-    if (!this._context) {
-      this._context = new AudioContext({ sampleRate: 16_000 });
-    }
-
-    const input = new Int16Array(buffer);
-    const output = new Float32Array(input.length);
-    for (let index = 0; index < input.length; index += 1) {
-      output[index] = input[index] / 0x7fff;
-    }
-
-    const audioBuffer = this._context.createBuffer(1, output.length, 16_000);
-    audioBuffer.copyToChannel(output, 0);
-
-    const source = this._context.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(this._context.destination);
-    source.start();
-  }
-
-  close(): void {
-    this._context?.close();
-    this._context = null;
-  }
 }

@@ -1,8 +1,8 @@
 using AxonVoiceAI.SessionRelay.Gemini;
-using AxonVoiceAI.Shared;
 using AxonVoiceAI.Shared.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -45,15 +45,21 @@ public sealed class FunctionCallInterceptor
     /// </summary>
     public async Task<IReadOnlyList<GeminiFunctionResponse>> HandleAsync(
         IReadOnlyList<GeminiFunctionCall> functionCalls,
-        GeminiLiveClient geminiClient,
+        IGeminiLiveClient geminiClient,
         CancellationToken ct)
     {
-        var acknowledgmentTask = SendAcknowledgmentAsync(geminiClient, ct);
         var responseTasks = functionCalls
             .Select(functionCall => HandleSingleAsync(functionCall, ct))
             .ToArray();
 
-        await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+        try
+        {
+            await Task.WhenAll(responseTasks.Select(static task => (Task)task));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return [];
+        }
 
         return responseTasks
             .Select(task => task.Result)
@@ -62,21 +68,56 @@ public sealed class FunctionCallInterceptor
             .ToArray();
     }
 
-    internal async Task SendAcknowledgmentAsync(GeminiLiveClient geminiClient, CancellationToken ct)
+    /// <summary>
+    /// No-op. Acknowledgment is now handled by the model itself: the system prompt instructs the
+    /// model to speak a brief phrase before calling any tool. The previous clientContent injection
+    /// was interrupting model generation mid-call and corrupting conversation state.
+    /// Kept for backward compatibility with existing callers.
+    /// </summary>
+    internal Task SendAcknowledgmentAsync(IGeminiLiveClient geminiClient, CancellationToken ct)
     {
-        var phrase = AcknowledgmentPhrases.ForLanguage(_language);
-        // Send the acknowledgment as a text turn so Gemini speaks it immediately.
-        // The exact mechanism depends on the Gemini Live API's client-content endpoint.
-        // This is a placeholder that will be wired when exact API response format is confirmed.
         _logger.LogDebug(
-            "Acknowledgment phrase queued: '{Phrase}'. SessionId={SessionId}",
-            phrase, _sessionId);
-
-        await Task.CompletedTask;
+            "Acknowledgment handled by model via system prompt. SessionId={SessionId}",
+            _sessionId);
+        return Task.CompletedTask;
     }
 
-    internal Task<GeminiFunctionResponse?> HandleSingleAsync(GeminiFunctionCall functionCall, CancellationToken ct)
-        => InvokeSinglePluginAsync(functionCall, ct);
+    internal async Task<GeminiFunctionResponse?> HandleSingleAsync(GeminiFunctionCall functionCall, CancellationToken ct)
+    {
+        var executionResult = await HandleSingleWithTelemetryAsync(functionCall, ct);
+        return executionResult?.Response;
+    }
+
+    internal async Task<FunctionCallExecutionResult?> HandleSingleWithTelemetryAsync(
+        GeminiFunctionCall functionCall,
+        CancellationToken ct)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var argumentsJson = functionCall.Args?.GetRawText();
+
+        try
+        {
+            var response = await InvokeSinglePluginAsync(functionCall, ct);
+            if (response is null)
+                return null;
+
+            stopwatch.Stop();
+
+            return new FunctionCallExecutionResult(
+                functionCall.Name,
+                argumentsJson,
+                response.ResponseJson,
+                !ContainsErrorPayload(response.ResponseJson),
+                ExtractErrorMessage(response.ResponseJson),
+                stopwatch.ElapsedMilliseconds is > int.MaxValue ? int.MaxValue : (int)stopwatch.ElapsedMilliseconds,
+                response);
+        }
+        catch
+        {
+            stopwatch.Stop();
+            throw;
+        }
+    }
 
     private async Task<GeminiFunctionResponse?> InvokeSinglePluginAsync(
         GeminiFunctionCall call,
@@ -150,8 +191,10 @@ public sealed class FunctionCallInterceptor
     private void InjectSessionContextArguments(string functionName, KernelArguments arguments)
     {
         arguments["agentId"] = _agentId;
+        arguments["tenantId"] = _tenantId;
 
-        if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal))
+        if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal)
+            || string.Equals(functionName, "place_order", StringComparison.Ordinal))
         {
             arguments["sessionId"] = _sessionId;
             arguments["detectedLanguage"] = _language;
@@ -174,6 +217,51 @@ public sealed class FunctionCallInterceptor
         if (arguments.TryGetValue(sourceName, out var value))
             arguments[targetName] = value;
     }
+
+    private static bool ContainsErrorPayload(string responseJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string? ExtractErrorMessage(string responseJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (!document.RootElement.TryGetProperty("error", out var errorElement))
+                return null;
+
+            return errorElement.ValueKind == JsonValueKind.String
+                ? errorElement.GetString()
+                : errorElement.GetRawText();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
 }
 
 public record GeminiFunctionResponse(string CallId, string FunctionName, string ResponseJson);
+
+public sealed record FunctionCallExecutionResult(
+    string FunctionName,
+    string? ArgumentsJson,
+    string ResultJson,
+    bool Succeeded,
+    string? ErrorMessage,
+    int DurationMs,
+    GeminiFunctionResponse Response);

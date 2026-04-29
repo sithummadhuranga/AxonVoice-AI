@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionConnection } from '../src/connection.js';
 
+const validSessionToken = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature';
+
 type Listener = (event: unknown) => void;
 
 class FakeWebSocket {
@@ -65,7 +67,7 @@ describe('SessionConnection', () => {
   it('requests a session token and opens the returned relay URL', async () => {
     vi.mocked(fetch).mockResolvedValue(
       createResponse({
-        token: 'session-token',
+        token: validSessionToken,
         wsUrl: 'wss://platform.test/relay/connect',
         expiresAt: '2026-04-21T15:00:00Z',
       }),
@@ -84,13 +86,56 @@ describe('SessionConnection', () => {
         body: JSON.stringify({ agentId: 'agent-123', channel: 'web' }),
       }),
     );
-    expect(FakeWebSocket.instances[0]?.url).toBe('wss://platform.test/relay/connect?token=session-token');
+    expect(FakeWebSocket.instances[0]?.url).toBe(
+      `wss://platform.test/relay/connect?token=${validSessionToken}`,
+    );
+  });
+
+  it('trims boundary noise from the session token before opening the websocket', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      createResponse({
+        token: '\u2060eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature\u2060',
+        wsUrl: 'wss://platform.test/relay/connect',
+        expiresAt: '2026-04-21T15:00:00Z',
+      }),
+    );
+
+    const connection = new SessionConnection();
+    await connection.connect({
+      agentId: 'agent-123',
+      gatewayUrl: 'https://platform.test',
+    });
+
+    expect(FakeWebSocket.instances[0]?.url).toBe(
+      'wss://platform.test/relay/connect?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature',
+    );
+  });
+
+  it('rejects malformed session tokens before opening the websocket', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      createResponse({
+        token: 'not a jwt',
+        wsUrl: 'wss://platform.test/relay/connect',
+        expiresAt: '2026-04-21T15:00:00Z',
+      }),
+    );
+
+    const connection = new SessionConnection();
+
+    await expect(
+      connection.connect({
+        agentId: 'agent-123',
+        gatewayUrl: 'https://platform.test',
+      }),
+    ).rejects.toThrow('Token response returned an invalid session token.');
+
+    expect(FakeWebSocket.instances).toHaveLength(0);
   });
 
   it('forwards outbound PCM after the socket opens', async () => {
     vi.mocked(fetch).mockResolvedValue(
       createResponse({
-        token: 'session-token',
+        token: validSessionToken,
         wsUrl: 'wss://platform.test/relay/connect',
         expiresAt: '2026-04-21T15:00:00Z',
       }),
@@ -108,7 +153,7 @@ describe('SessionConnection', () => {
   it('delivers inbound binary messages to listeners', async () => {
     vi.mocked(fetch).mockResolvedValue(
       createResponse({
-        token: 'session-token',
+        token: validSessionToken,
         wsUrl: 'wss://platform.test/relay/connect',
         expiresAt: '2026-04-21T15:00:00Z',
       }),
