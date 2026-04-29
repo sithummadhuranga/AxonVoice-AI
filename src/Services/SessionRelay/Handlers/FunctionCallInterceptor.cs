@@ -1,5 +1,4 @@
 using AxonVoiceAI.SessionRelay.Gemini;
-using AxonVoiceAI.Shared;
 using AxonVoiceAI.Shared.Contracts;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -49,14 +48,13 @@ public sealed class FunctionCallInterceptor
         IGeminiLiveClient geminiClient,
         CancellationToken ct)
     {
-        var acknowledgmentTask = SendAcknowledgmentAsync(geminiClient, ct);
         var responseTasks = functionCalls
             .Select(functionCall => HandleSingleAsync(functionCall, ct))
             .ToArray();
 
         try
         {
-            await Task.WhenAll(responseTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+            await Task.WhenAll(responseTasks.Select(static task => (Task)task));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -70,17 +68,18 @@ public sealed class FunctionCallInterceptor
             .ToArray();
     }
 
-    internal async Task SendAcknowledgmentAsync(IGeminiLiveClient geminiClient, CancellationToken ct)
+    /// <summary>
+    /// No-op. Acknowledgment is now handled by the model itself: the system prompt instructs the
+    /// model to speak a brief phrase before calling any tool. The previous clientContent injection
+    /// was interrupting model generation mid-call and corrupting conversation state.
+    /// Kept for backward compatibility with existing callers.
+    /// </summary>
+    internal Task SendAcknowledgmentAsync(IGeminiLiveClient geminiClient, CancellationToken ct)
     {
-        var phrase = AcknowledgmentPhrases.ForLanguage(_language);
-        var instruction = BuildAcknowledgmentInstruction(phrase);
-
-        await geminiClient.SendClientContentTextTurnAsync(instruction, ct);
-
         _logger.LogDebug(
-            "Acknowledgment phrase sent to Gemini. Phrase='{Phrase}'. SessionId={SessionId}",
-            phrase,
+            "Acknowledgment handled by model via system prompt. SessionId={SessionId}",
             _sessionId);
+        return Task.CompletedTask;
     }
 
     internal async Task<GeminiFunctionResponse?> HandleSingleAsync(GeminiFunctionCall functionCall, CancellationToken ct)
@@ -192,6 +191,7 @@ public sealed class FunctionCallInterceptor
     private void InjectSessionContextArguments(string functionName, KernelArguments arguments)
     {
         arguments["agentId"] = _agentId;
+        arguments["tenantId"] = _tenantId;
 
         if (string.Equals(functionName, "create_pending_booking", StringComparison.Ordinal))
         {
@@ -252,10 +252,6 @@ public sealed class FunctionCallInterceptor
         }
     }
 
-    private static string BuildAcknowledgmentInstruction(string phrase)
-    {
-        return $"Speak this exact acknowledgment to the caller and add nothing else: \"{phrase}\"";
-    }
 }
 
 public record GeminiFunctionResponse(string CallId, string FunctionName, string ResponseJson);

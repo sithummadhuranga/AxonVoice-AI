@@ -25,6 +25,60 @@ public sealed record GeminiSetup
 
     [JsonPropertyName("tools")]
     public IReadOnlyList<GeminiToolDeclaration> Tools { get; init; } = [];
+
+    [JsonPropertyName("realtimeInputConfig")]
+    public GeminiRealtimeInputConfig RealtimeInputConfig { get; init; } = new();
+}
+
+/// <summary>
+/// Controls how Gemini handles voice activity detection and turn completion for live audio input.
+/// Without explicit configuration the model defaults are too conservative, causing long pauses
+/// before it detects that the caller has finished speaking.
+/// </summary>
+public sealed record GeminiRealtimeInputConfig
+{
+    [JsonPropertyName("automaticActivityDetection")]
+    public GeminiAutomaticActivityDetection AutomaticActivityDetection { get; init; } = new();
+
+    /// <summary>
+    /// START_OF_ACTIVITY_INTERRUPTS: detecting new speech from the caller interrupts the model
+    /// mid-response, which is the natural behaviour for a voice conversation.
+    /// </summary>
+    [JsonPropertyName("activityHandling")]
+    public string ActivityHandling { get; init; } = "START_OF_ACTIVITY_INTERRUPTS";
+
+    /// <summary>
+    /// TURN_INCLUDES_ONLY_ACTIVITY: only audio bytes flagged as speech are forwarded to the model
+    /// context, eliminating background noise from the turn window and reducing latency.
+    /// </summary>
+    [JsonPropertyName("turnCoverage")]
+    public string TurnCoverage { get; init; } = "TURN_INCLUDES_ONLY_ACTIVITY";
+}
+
+public sealed record GeminiAutomaticActivityDetection
+{
+    [JsonPropertyName("disabled")]
+    public bool Disabled { get; init; } = false;
+
+    /// <summary>High sensitivity so the model reacts quickly when the caller starts speaking.</summary>
+    [JsonPropertyName("startOfSpeechSensitivity")]
+    public string StartOfSpeechSensitivity { get; init; } = "START_SENSITIVITY_HIGH";
+
+    /// <summary>High sensitivity so the model stops listening promptly once the caller is silent.</summary>
+    [JsonPropertyName("endOfSpeechSensitivity")]
+    public string EndOfSpeechSensitivity { get; init; } = "END_SENSITIVITY_HIGH";
+
+    /// <summary>20 ms of audio prepended before detected speech start to avoid clipping the first phoneme.</summary>
+    [JsonPropertyName("prefixPaddingMs")]
+    public int PrefixPaddingMs { get; init; } = 20;
+
+    /// <summary>
+    /// 250 ms of trailing silence keeps turn-taking responsive without clipping natural word endings.
+    /// The widget also sends audioStreamEnd when local speech gating detects sustained silence,
+    /// so this server-side threshold acts as a low-latency fallback rather than the only turn signal.
+    /// </summary>
+    [JsonPropertyName("silenceDurationMs")]
+    public int SilenceDurationMs { get; init; } = 250;
 }
 
 public sealed record GeminiGenerationConfig
@@ -34,6 +88,19 @@ public sealed record GeminiGenerationConfig
 
     [JsonPropertyName("speechConfig")]
     public GeminiSpeechConfig SpeechConfig { get; init; } = new();
+
+    [JsonPropertyName("thinkingConfig")]
+    public GeminiThinkingConfig ThinkingConfig { get; init; } = new();
+}
+
+/// <summary>
+/// Gemini 2.5 Flash Live enables dynamic thinking by default. For fast phone-style turns
+/// we disable it so the model starts speaking with lower latency on straightforward tasks.
+/// </summary>
+public sealed record GeminiThinkingConfig
+{
+    [JsonPropertyName("thinkingBudget")]
+    public int ThinkingBudget { get; init; } = 0;
 }
 
 public sealed record GeminiSpeechConfig

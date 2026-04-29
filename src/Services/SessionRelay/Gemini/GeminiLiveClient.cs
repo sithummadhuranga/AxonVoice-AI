@@ -10,7 +10,6 @@ namespace AxonVoiceAI.SessionRelay.Gemini;
 
 public interface IGeminiLiveClient
 {
-    Task SendClientContentTextTurnAsync(string text, CancellationToken ct);
 }
 
 /// <summary>
@@ -53,6 +52,12 @@ public sealed class GeminiLiveClient : IAsyncDisposable, IGeminiLiveClient
     public async Task SendAudioChunkAsync(byte[] pcmData, CancellationToken ct)
     {
         var message = GeminiLiveRequestFactory.CreateAudioInput(pcmData);
+        await SendJsonMessageAsync(message, ct);
+    }
+
+    public async Task SendAudioStreamEndAsync(CancellationToken ct)
+    {
+        var message = GeminiLiveRequestFactory.CreateAudioStreamEnd();
         await SendJsonMessageAsync(message, ct);
     }
 
@@ -274,6 +279,9 @@ public sealed record GeminiServerContent
 
     [JsonPropertyName("turnComplete")]
     public bool? TurnComplete { get; init; }
+
+    [JsonPropertyName("interrupted")]
+    public bool? Interrupted { get; init; }
 }
 
 public sealed record GeminiModelTurn

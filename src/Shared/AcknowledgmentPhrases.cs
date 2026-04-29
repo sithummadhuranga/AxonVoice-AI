@@ -9,9 +9,9 @@ public static class AcknowledgmentPhrases
     private static readonly IReadOnlyDictionary<string, string> Phrases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["si"] = "හොඳයි, මමත් පරීක්ෂා කරලා බලන්නම්",
-            ["ta"] = "சரி, நான் சரிபார்க்கிறேன்",
-            ["en"] = "Let me check that for you",
+            ["si"] = "මොහොතක් ඉන්න, මම ඒක පරීක්ෂා කරලා කියන්නම්.",
+            ["ta"] = "ஒரு நிமிடம், நான் சரிபார்த்து சொல்கிறேன்.",
+            ["en"] = "One moment, let me check that for you.",
         };
 
     /// <summary>

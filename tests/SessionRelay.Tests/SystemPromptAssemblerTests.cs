@@ -17,6 +17,9 @@ public sealed class SystemPromptAssemblerTests
 
         sessionConfig.Setup.Model.Should().Be("models/gemini-2.5-flash-native-audio-preview-12-2025");
         sessionConfig.Setup.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName.Should().Be("Puck");
+        sessionConfig.Setup.GenerationConfig.ThinkingConfig.ThinkingBudget.Should().Be(0);
+        toolSchemaJson.Should().Contain("search_knowledge_base");
+        toolSchemaJson.Should().Contain("\"query\"");
         toolSchemaJson.Should().Contain("partySize");
         toolSchemaJson.Should().Contain("customerName");
         toolSchemaJson.Should().Contain("customerPhone");
@@ -41,13 +44,41 @@ public sealed class SystemPromptAssemblerTests
         prompt.Should().Contain("--- KNOWLEDGE BASE ---");
         prompt.Should().Contain("[Source: hours.pdf | Chunk: 2]");
         prompt.Should().Contain("We open at 10 AM every day.");
-        prompt.Should().Contain("This agent supports: Sinhala, Tamil, English.");
-        prompt.Should().Contain("If the language is unclear, default to Sinhala.");
-        prompt.Should().Contain("Continue in the same language for the rest of the session unless the caller explicitly asks to change languages.");
-        prompt.Should().Contain("Use check_availability before create_pending_booking.");
+        prompt.Should().Contain("Start speaking in Sinhala immediately from the first word of every session.");
+        prompt.Should().Contain("If the language is ambiguous after two exchanges, continue in Sinhala.");
+        prompt.Should().Contain("If the caller responds in a different supported language (Sinhala, Tamil, English)");
+        prompt.Should().Contain("search_knowledge_base");
+        prompt.Should().Contain("menu and price questions");
+        prompt.Should().Contain("Before calling ANY tool, ALWAYS speak a brief acknowledgment");
+        prompt.Should().Contain("After a successful booking response, read out the confirmation code and stop.");
+        prompt.Should().Contain("Use natural spoken language throughout. For Sinhala and Tamil");
+        prompt.Should().Contain("Call check_availability exactly once");
     }
 
-    private static AgentConfigDto CreateAgentConfig()
+    [Fact]
+    public void BuildSessionConfig_BookingDisabled_StillExposesKnowledgeSearchTool()
+    {
+        var agentConfig = CreateAgentConfig(bookingEnabled: false);
+
+        var sessionConfig = SystemPromptAssembler.BuildSessionConfig(agentConfig, []);
+        var toolSchemaJson = JsonSerializer.Serialize(sessionConfig.Setup.Tools);
+
+        toolSchemaJson.Should().Contain("search_knowledge_base");
+        toolSchemaJson.Should().NotContain("check_availability");
+        toolSchemaJson.Should().NotContain("create_pending_booking");
+    }
+
+    [Fact]
+    public void BuildSessionConfig_InvalidVoiceName_FallsBackToDefaultVoice()
+    {
+        var agentConfig = CreateAgentConfig() with { VoiceName = "UnknownVoice" };
+
+        var sessionConfig = SystemPromptAssembler.BuildSessionConfig(agentConfig, []);
+
+        sessionConfig.Setup.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName.Should().Be("Sulafat");
+    }
+
+    private static AgentConfigDto CreateAgentConfig(bool bookingEnabled = true)
     {
         return new AgentConfigDto(
             AgentId: Guid.NewGuid(),
@@ -60,7 +91,7 @@ public sealed class SystemPromptAssemblerTests
             VoiceName: "Puck",
             GeminiModel: "gemini-2.5-flash-native-audio-preview-12-2025",
             GeminiApiKey: "secret",
-            BookingEnabled: true,
+            BookingEnabled: bookingEnabled,
             SessionTimeoutSeconds: 600,
             SilenceTimeoutSeconds: 90);
     }

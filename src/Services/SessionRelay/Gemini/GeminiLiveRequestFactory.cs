@@ -21,6 +21,17 @@ internal static class GeminiLiveRequestFactory
         };
     }
 
+    public static GeminiClientMessage CreateAudioStreamEnd()
+    {
+        return new GeminiClientMessage
+        {
+            RealtimeInput = new GeminiRealtimeInput
+            {
+                AudioStreamEnd = true,
+            }
+        };
+    }
+
     public static GeminiClientMessage CreateClientContentTextTurn(string text)
     {
         return new GeminiClientMessage
@@ -119,6 +130,9 @@ internal sealed record GeminiRealtimeInput
 
     [JsonPropertyName("text")]
     public string? Text { get; init; }
+
+    [JsonPropertyName("audioStreamEnd")]
+    public bool? AudioStreamEnd { get; init; }
 }
 
 internal sealed record GeminiBlob

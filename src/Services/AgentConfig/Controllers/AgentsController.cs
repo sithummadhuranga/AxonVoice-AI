@@ -1,6 +1,7 @@
 using AxonVoiceAI.AgentConfig.Data;
 using AxonVoiceAI.AgentConfig.Data.Entities;
 using AxonVoiceAI.AgentConfig.Services;
+using AxonVoiceAI.Shared;
 using AxonVoiceAI.Shared.DTOs;
 using AxonVoiceAI.Shared.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -87,7 +88,7 @@ public sealed class AgentsController : ControllerBase
             PersonaPrompt = request.PersonaPrompt.Trim(),
             PrimaryLanguage = primaryLanguage,
             SupportedLanguages = supportedLanguages,
-            VoiceName = NormalizeVoiceName(request.VoiceName) ?? "Aoede",
+            VoiceName = NormalizeVoiceName(request.VoiceName) ?? GeminiVoiceCatalog.DefaultVoiceName,
             SessionTimeoutSeconds = request.SessionTimeoutSeconds ?? 600,
             SilenceTimeoutSeconds = request.SilenceTimeoutSeconds ?? 90,
             ToolsEnabled = toolsEnabled,
@@ -330,6 +331,11 @@ public sealed class AgentsController : ControllerBase
             return voiceError;
         }
 
+        if (voiceName is not null && !GeminiVoiceCatalog.IsSupported(voiceName))
+        {
+            return "Voice name must be one of the supported Gemini prebuilt voices.";
+        }
+
         var toolsError = ValidateTools(toolsEnabled);
         if (toolsError is not null)
         {
@@ -470,7 +476,7 @@ public sealed class AgentsController : ControllerBase
             return null;
         }
 
-        return value.Trim();
+        return GeminiVoiceCatalog.Normalize(value);
     }
 
     private static string[]? NormalizeTools(string[]? values)

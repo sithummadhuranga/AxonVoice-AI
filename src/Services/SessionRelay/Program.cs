@@ -48,6 +48,7 @@ builder.Services.AddHttpClient("conversation-store", client =>
 
 builder.Services.AddSingleton<IAvailabilityRepository, AgentConfigAvailabilityRepository>();
 builder.Services.AddSingleton<IBookingRepository, AgentConfigBookingRepository>();
+builder.Services.AddSingleton<IKnowledgeSearchRepository, KnowledgeBaseKnowledgeSearchRepository>();
 builder.Services.AddSingleton<ConversationStoreSessionWriter>();
 
 // Register Semantic Kernel plugins for function call dispatch.
@@ -55,7 +56,9 @@ builder.Services.AddSingleton<KernelPluginCollection>(sp =>
 {
     var availabilityRepo = sp.GetRequiredService<IAvailabilityRepository>();
     var bookingRepo = sp.GetRequiredService<IBookingRepository>();
+    var knowledgeSearchRepo = sp.GetRequiredService<IKnowledgeSearchRepository>();
     var collection = new KernelPluginCollection();
+    collection.AddFromObject(new KnowledgeSearchPlugin(knowledgeSearchRepo));
     collection.AddFromObject(new AvailabilityPlugin(availabilityRepo));
     collection.AddFromObject(new BookingPlugin(bookingRepo));
     return collection;

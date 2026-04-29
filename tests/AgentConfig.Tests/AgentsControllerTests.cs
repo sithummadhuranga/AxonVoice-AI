@@ -74,6 +74,35 @@ public sealed class AgentsControllerTests
     }
 
     [Fact]
+    public async Task CreateAgentAsync_UnsupportedVoice_ReturnsBadRequest()
+    {
+        var tenantId = Guid.NewGuid();
+
+        await using var db = CreateDbContext();
+        db.Tenants.Add(CreateTenant(tenantId));
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db, tenantId);
+
+        var result = await controller.CreateAgentAsync(
+            new CreateAgentRequest(
+                Name: "dining-room",
+                DisplayName: "Dining Room Host",
+                PersonaPrompt: "Welcome guests and guide them through booking questions.",
+                PrimaryLanguage: "en",
+                SupportedLanguages: ["en", "si"],
+                VoiceName: "NotARealVoice",
+                ToolsEnabled: ["check_availability", "create_pending_booking"],
+                SessionTimeoutSeconds: 600,
+                SilenceTimeoutSeconds: 90,
+                IsActive: true),
+            CancellationToken.None);
+
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value.Should().BeEquivalentTo(new { error = "Voice name must be one of the supported Gemini prebuilt voices." });
+    }
+
+    [Fact]
     public async Task CreateAgentAsync_ValidRequest_PersistsAgentAndReturnsCreatedResponse()
     {
         var tenantId = Guid.NewGuid();
@@ -91,7 +120,7 @@ public sealed class AgentsControllerTests
                 PersonaPrompt: "Greets callers warmly and captures booking details with short follow-up questions.",
                 PrimaryLanguage: "si",
                 SupportedLanguages: ["si", "ta", "en"],
-                VoiceName: "Aoede",
+                VoiceName: "puck",
                 ToolsEnabled: ["check_availability", "create_pending_booking"],
                 SessionTimeoutSeconds: 600,
                 SilenceTimeoutSeconds: 90,
@@ -104,11 +133,13 @@ public sealed class AgentsControllerTests
         var payload = created.Value.Should().BeOfType<AgentDetailResponse>().Subject;
         payload.DisplayName.Should().Be("Mathara Bath Kade");
         payload.PrimaryLanguage.Should().Be("si");
+        payload.VoiceName.Should().Be("Puck");
         payload.ToolsEnabled.Should().Equal("check_availability", "create_pending_booking");
 
         var savedAgent = await db.Agents.SingleAsync();
         savedAgent.Name.Should().Be("mathara-bath-kade");
         savedAgent.DisplayName.Should().Be("Mathara Bath Kade");
+        savedAgent.VoiceName.Should().Be("Puck");
         savedAgent.GeminiModel.Should().Be("gemini-2.5-flash-native-audio-preview-12-2025");
         created.Location.Should().Be($"/agents/{savedAgent.Id:D}");
         payload.Id.Should().Be(savedAgent.Id);

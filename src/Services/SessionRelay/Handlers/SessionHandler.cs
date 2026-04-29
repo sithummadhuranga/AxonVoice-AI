@@ -115,9 +115,19 @@ public sealed class SessionHandler
         GeminiLiveClient geminiClient,
         CancellationToken ct)
     {
-        await foreach (var chunk in channel.GetInboundAudioStreamAsync(ct))
+        await foreach (var frame in channel.GetInboundAudioFramesAsync(ct))
         {
-            await geminiClient.SendAudioChunkAsync(chunk, ct);
+            switch (frame.Kind)
+            {
+                case InboundAudioFrameKind.Audio:
+                    await geminiClient.SendAudioChunkAsync(frame.AudioChunk, ct);
+                    break;
+                case InboundAudioFrameKind.AudioStreamEnd:
+                    await geminiClient.SendAudioStreamEndAsync(ct);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported inbound audio frame kind '{frame.Kind}'.");
+            }
         }
     }
 
@@ -147,6 +157,11 @@ public sealed class SessionHandler
                 {
                     CancelPendingToolCalls(message.ToolCallCancellation.Ids, pendingToolCalls);
                     continue;
+                }
+
+                if (message.ServerContent?.Interrupted is true)
+                {
+                    await channel.SendOutboundControlAsync(OutboundAudioControl.InterruptPlayback(), ct);
                 }
 
                 if (message.ServerContent?.ModelTurn is { Parts.Count: > 0 })
@@ -190,12 +205,14 @@ public sealed class SessionHandler
 
         try
         {
-            var acknowledgmentTask = TrySendAcknowledgmentAsync(interceptor, geminiClient, ct);
+            // The model speaks an acknowledgment phrase naturally before emitting the toolCall message
+            // (instructed via the system prompt). No clientContent injection is needed here — sending
+            // clientContent mid-session interrupts model generation and corrupts conversation state.
             var executionTasks = batchCalls
                 .Select(pendingToolCall => interceptor.HandleSingleWithTelemetryAsync(pendingToolCall.FunctionCall, pendingToolCall.CancellationTokenSource.Token))
                 .ToArray();
 
-            await Task.WhenAll(executionTasks.Select(static task => (Task)task).Append(acknowledgmentTask));
+            await Task.WhenAll(executionTasks.Select(static task => (Task)task));
 
             var completedExecutions = batchCalls
                 .Select((pendingToolCall, index) => new
@@ -276,24 +293,6 @@ public sealed class SessionHandler
             }
 
             _logger.LogDebug("Received Gemini tool call cancellation for unknown or completed call {ToolCallId}.", id);
-        }
-    }
-
-    private async Task TrySendAcknowledgmentAsync(
-        FunctionCallInterceptor interceptor,
-        GeminiLiveClient geminiClient,
-        CancellationToken ct)
-    {
-        try
-        {
-            await interceptor.SendAcknowledgmentAsync(geminiClient, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Tool call acknowledgment failed; continuing with plugin execution.");
         }
     }
 

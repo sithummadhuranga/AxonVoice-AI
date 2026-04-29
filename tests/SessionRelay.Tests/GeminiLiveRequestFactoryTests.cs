@@ -57,6 +57,8 @@ public sealed class GeminiLiveRequestFactoryTests
         json.Should().Contain("\"systemInstruction\"");
         json.Should().Contain("\"responseModalities\"");
         json.Should().Contain("\"speechConfig\"");
+        json.Should().Contain("\"thinkingConfig\"");
+        json.Should().Contain("\"thinkingBudget\":0");
         json.Should().Contain("\"voiceConfig\"");
         json.Should().Contain("\"prebuiltVoiceConfig\"");
         json.Should().Contain("\"voiceName\":\"Puck\"");
@@ -111,7 +113,7 @@ public sealed class GeminiLiveRequestFactoryTests
     public void CreateClientContentTextTurn_WrapsInstructionInUserTurn()
     {
         var request = GeminiLiveRequestFactory.CreateClientContentTextTurn(
-            "Speak this exact acknowledgment to the caller and add nothing else: \"Let me check that for you\"");
+            "Speak this exact acknowledgment to the caller and add nothing else: \"One moment, let me check that for you.\"");
 
         var json = JsonSerializer.Serialize(request);
 
